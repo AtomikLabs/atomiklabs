@@ -118,7 +118,7 @@ def log_initial_info(event: dict) -> None:
     logger.info(f"## {__name__} STARTED")
 
 
-def load_xml_from_s3(bucket_name: str, key: str):
+def load_xml_from_s3(bucket_name: str, key: str) -> str:
     """
     Loads a list of XML strings from a JSON file in S3.
 
@@ -140,8 +140,7 @@ def load_xml_from_s3(bucket_name: str, key: str):
         obj = s3.Object(bucket_name, key)
         body = obj.get()["Body"].read()
 
-        # Load JSON data
-        xml_data_list = json.loads(body)
+        xml_data_list = body
 
         return xml_data_list
     except Exception as e:
@@ -222,9 +221,9 @@ def upload_to_s3(original_filename: str, bucket_name: str, xml: dict) -> None:
         bucket_name (str): Bucket name.
         xml (dict): XML.
     """
-    logger.info("Uploading to S3 bucket " + bucket_name + " as " + original_filename + "_parsed.xml")
+    logger.info("Uploading to S3 bucket " + bucket_name + " as " + original_filename + "_parsed.json")
     try:
-        key = (original_filename + "_parsed.xml").replace("raw", "parsed")
+        key = (original_filename + "_parsed.json")
         s3 = boto3.client("s3")
         s3.put_object(Body=json.dumps(xml), Bucket=bucket_name, Key=key)
     except Exception as e:
@@ -255,7 +254,7 @@ def call_persist_summaries(persist_lambda_name: str, bucket_name: str, filename:
 
 
 def config_for_test():
-    global AURORA_CLUSTER_ARN, BASE_URL, BUCKET_NAME, DB_CREDENTIALS_SECRET_ARN, DATABASE, SUMMARY_SET, OPENAI_KEY
+    global AURORA_CLUSTER_ARN, BASE_URL, BUCKET_NAME, DB_CREDENTIALS_SECRET_ARN, DATABASE, SUMMARY_SET
     AURORA_CLUSTER_ARN = "arn:aws:rds:us-east-1:758145997264:cluster:atomiklabs-dev-aurora-cluster"
     BASE_URL = "http://export.arxiv.org/oai2"
     BUCKET_NAME = "atomiklabs-data-bucket-dev"
