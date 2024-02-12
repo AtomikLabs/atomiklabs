@@ -1,0 +1,62 @@
+name: AtomikLabs Infrastructure CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - stage
+      - dev
+  pull_request:
+    branches:
+      - dev
+      - test-branch
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  setup-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      env-file: ${{ steps.set-env.outputs.env-file }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine environment
+        id: set-env
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "Base branch of the PR: ${{ github.base_ref }}"
+            BRANCH_NAME="${{ github.base_ref }}"
+          else
+            echo "Push to branch: ${GITHUB_REF#refs/heads/}"
+            BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          fi
+
+          if [[ $BRANCH_NAME == 'dev' ]]; then
+            echo "Development environment selected"
+            echo "env-file=infra/environments/env.dev.json" >> $GITHUB_ENV
+          elif [[ $BRANCH_NAME == 'stage' ]]; then
+            echo "Staging environment selected"
+            echo "env-file=infra/environments/env.stage.json" >> $GITHUB_ENV
+          elif [[ $BRANCH_NAME == 'main' ]]; then
+            echo "Production environment selected"
+            echo "env-file=infra/environments/env.prod.json" >> $GITHUB_ENV
+          else
+            echo "No matching environment for branch $BRANCH_NAME"
+          fi
+
+      - name: Echo environment file path
+        run: |
+          echo "Environment file path: ${{ env.env-file }}"
+          if [[ -z "${{ env.env-file }}" ]]; then
+            echo "Environment file path is empty"
+          else
+            echo "Environment file path is set"
+          fi
+
+      - name: Set environment variables from file
+        if: env.env-file != ''
+        run: |
+          jq -r 'to_entries | .[] | "\(.key)=\(.value)"' "${{ env.env-file }}" >> $GITHUB_ENV
