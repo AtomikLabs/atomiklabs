@@ -1,7 +1,7 @@
 aiokafka==0.10.0
 asttokens==2.4.1
 async-timeout==4.0.3
-avro=1.11.3
+avro==1.11.3
 black==24.2.0
 boto3==1.33.7
 botocore==1.33.7
