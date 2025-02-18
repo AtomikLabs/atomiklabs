@@ -76,7 +76,11 @@ jobs:
       - name: Get ECR repository URL
         working-directory: ./infra
         run: |
-          echo "ECR_REPO=$(terraform output -raw arxiv_processor_repository_url)" >> $GITHUB_ENV
+          echo "Getting ECR repository URL..."
+          REPO_URL=$(terraform output -raw arxiv_processor_repository_url)
+          echo "Repository URL: $REPO_URL"
+          echo "ECR_REPO=$REPO_URL" >> "$GITHUB_ENV"
+          echo "Stored in ECR_REPO environment variable"
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
@@ -86,6 +90,7 @@ jobs:
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
+          echo "Building image for repository: ${{ env.ECR_REPO }}"
           docker build -t ${{ env.ECR_REPO }}:latest .
           docker push ${{ env.ECR_REPO }}:latest
 
