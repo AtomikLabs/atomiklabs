@@ -33,13 +33,6 @@ resource "aws_ssm_parameter" "dynamodb_table" {
   tags  = local.common_tags
 }
 
-resource "aws_ssm_parameter" "email_sender" {
-  name  = "/${var.project}/${var.environment}/arxiv/email/sender"
-  type  = "String"
-  value = var.email_config.sender
-  tags  = local.common_tags
-}
-
 resource "aws_ssm_parameter" "email_recipients" {
   name  = "/${var.project}/${var.environment}/arxiv/email/recipients"
   type  = "String"
