@@ -1,4 +1,4 @@
-name: Infra
+name: infra
 
 on:
   push:
@@ -9,22 +9,84 @@ on:
 permissions:
       id-token: write
       contents: read
+
 jobs:
-  AssumeRoleAndCallIdentity:
+  terraform:
     runs-on: ubuntu-latest
     environment: dev
+    defaults:
+      run:
+        working-directory: ./infra
+    
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
-      - name: configure aws credentials
+
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
           role-to-assume: ${{ secrets.AWS_CI_CD_ROLE }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ secrets.AWS_REGION }}
-      # Hello from AWS: WhoAmI
-      - name: Sts GetCallerIdentity
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        
+      - name: Terraform Init
         run: |
-          aws sts get-caller-identity
+          terraform init \
+            -backend-config="bucket=${{ vars.AWS_CORE_STATE_S3 }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="dynamodb_table=terraform-state-lock"
+
+      - name: Terraform Plan
+        env:
+          TF_VAR_environment: ${{ vars.ENVIRONMENT }}
+          TF_VAR_region: ${{ vars.AWS_REGION }}
+          TF_VAR_resource_uuid: ${{ vars.AWS_RESOURCE_UUID }}
+          TF_VAR_email_config: ${{ vars.AWS_EMAIL_CONFIG }}
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        env:
+          TF_VAR_environment: ${{ vars.ENVIRONMENT }}
+          TF_VAR_region: ${{ vars.AWS_REGION }}
+          TF_VAR_resource_uuid: ${{ vars.AWS_RESOURCE_UUID }}
+          TF_VAR_email_config: ${{ vars.AWS_EMAIL_CONFIG }}
+        run: terraform apply -auto-approve tfplan
+
+  build-and-push:
+    needs: terraform
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    environment: dev
+    
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4.1.0
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_CD_ROLE }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Get ECR repository URL
+        working-directory: ./infra
+        run: |
+          echo "ECR_REPO=$(terraform output -raw arxiv_processor_repository_url)" >> $GITHUB_ENV
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        working-directory: ./services/arxiv_processor
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t ${{ env.ECR_REPO }}:latest .
+          docker push ${{ env.ECR_REPO }}:latest
 
           
