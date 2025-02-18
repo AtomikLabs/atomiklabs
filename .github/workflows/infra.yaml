@@ -6,24 +6,20 @@ on:
   pull_request:
     branches: [ dev ]
 
-env:
-  
-  AWS_REGION : <"us-east-1"> #Change to reflect your Region
-
-# Permission can be added at job level or workflow level    
 permissions:
-      id-token: write   # This is required for requesting the JWT
-      contents: read    # This is required for actions/checkout
+      id-token: write
+      contents: read
 jobs:
   AssumeRoleAndCallIdentity:
     runs-on: ubuntu-latest
+    environment: dev
     steps:
       - name: Git clone the repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v1.7.0
+        uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
-          role-to-assume: ${{ secrets.AWS_CI_CD_ROLE }}
+          role-to-assume: ${{ secrets.AWS_OIDC_PROVIDER }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ env.AWS_REGION }}
       # Hello from AWS: WhoAmI
