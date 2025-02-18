@@ -193,3 +193,6 @@ scripts/**/*.docx
 notes/
 
 cline_docs/
+
+summaries/
+scripts/custom/summaries/
