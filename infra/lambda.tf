@@ -24,7 +24,7 @@ resource "aws_lambda_function" "mailer" {
 }
 
 resource "aws_iam_role" "lambda_mailer" {
-  name = "${local.resource_prefix}-lambda-mailer-${local.resource_suffix}"
+  name = "${local.resource_prefix}-mail-${local.resource_suffix}"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [

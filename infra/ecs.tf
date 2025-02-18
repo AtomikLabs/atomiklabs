@@ -13,7 +13,7 @@ resource "aws_ecs_cluster_capacity_providers" "arxiv" {
 }
 
 resource "aws_iam_role" "ecs_task_role" {
-  name = "${local.resource_prefix}-ecs-task-role-${local.resource_suffix}"
+  name = "${local.resource_prefix}-task-${local.resource_suffix}"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -77,7 +77,7 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
 }
 
 resource "aws_iam_role" "ecs_execution_role" {
-  name = "${local.resource_prefix}-ecs-execution-role-${local.resource_suffix}"
+  name = "${local.resource_prefix}-exec-${local.resource_suffix}"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [

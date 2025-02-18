@@ -1,5 +1,5 @@
 resource "aws_iam_role" "step_functions" {
-  name = "${local.resource_prefix}-step-functions-${local.resource_suffix}"
+  name = "${local.resource_prefix}-sfn-${local.resource_suffix}"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
