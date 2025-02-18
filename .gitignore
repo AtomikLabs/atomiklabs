@@ -189,3 +189,7 @@ scripts/**/*.docx
 # Airflow
 /orchestration/airflow/logs/
 /orchestration/airflow/dags/__pycache__/
+
+notes/
+
+cline_docs/

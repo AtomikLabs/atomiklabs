@@ -1,6 +1,0 @@
-name: "Load Environment Variables"
-description: "Sets environment variables such as dev environment."
-
-runs:
-  using: "node20"
-  main: "load-env-variables.js"
