@@ -21,7 +21,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_PROVIDER }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION }}
       # Hello from AWS: WhoAmI
       - name: Sts GetCallerIdentity
         run: |
