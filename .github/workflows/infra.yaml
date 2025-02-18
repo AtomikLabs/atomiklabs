@@ -19,9 +19,10 @@ jobs:
       - name: configure aws credentials
         uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
-          role-to-assume: ${{ secrets.AWS_OIDC_PROVIDER }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          audience: sts.amazonaws.com
       # Hello from AWS: WhoAmI
       - name: Sts GetCallerIdentity
         run: |
