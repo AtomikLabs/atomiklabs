@@ -39,9 +39,3 @@ variable "email_config" {
     recipients = list(string)
   })
 }
-
-variable "lambda_zip" {
-  description = "Name of the Lambda zip file"
-  type        = string
-  default     = "mailer.zip"
-}

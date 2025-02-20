@@ -32,13 +32,8 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         
-      - name: Package Lambda
-        run: |
-          TIMESTAMP=$(date +%s)
-          mkdir -p build/
-          cd ../services/arxiv_mailer/src
-          zip -r ../../../infra/build/mailer_${TIMESTAMP}.zip .
-          echo "LAMBDA_ZIP=mailer_${TIMESTAMP}.zip" >> $GITHUB_ENV
+      - name: Setup build directory
+        run: mkdir -p build/
 
       - name: Terraform Init
         run: |
@@ -53,7 +48,6 @@ jobs:
           TF_VAR_region: ${{ vars.AWS_REGION }}
           TF_VAR_resource_uuid: ${{ vars.AWS_RESOURCE_UUID }}
           TF_VAR_email_config: ${{ vars.AWS_EMAIL_CONFIG }}
-          TF_VAR_lambda_zip: ${{ env.LAMBDA_ZIP }}
         run: terraform plan -out=tfplan
 
       - name: Terraform Apply
@@ -63,7 +57,6 @@ jobs:
           TF_VAR_region: ${{ vars.AWS_REGION }}
           TF_VAR_resource_uuid: ${{ vars.AWS_RESOURCE_UUID }}
           TF_VAR_email_config: ${{ vars.AWS_EMAIL_CONFIG }}
-          TF_VAR_lambda_zip: ${{ env.LAMBDA_ZIP }}
         run: terraform apply -auto-approve tfplan
 
   build-and-push:
