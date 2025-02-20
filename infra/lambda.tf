@@ -1,7 +1,7 @@
 data "archive_file" "mailer" {
   type        = "zip"
   source_dir  = "${path.module}/../services/arxiv_mailer/src"
-  output_path = "${path.module}/build/mailer-${timestamp()}.zip"
+  output_path = "${path.module}/build/mailer.zip"
 }
 
 resource "aws_lambda_function" "mailer" {
@@ -9,7 +9,7 @@ resource "aws_lambda_function" "mailer" {
   function_name    = "${local.resource_prefix}-mailer-${local.resource_suffix}"
   role            = aws_iam_role.lambda_mailer.arn
   handler         = "mailer.lambda_handler"
-  source_code_hash = data.archive_file.mailer.output_base64sha256
+  source_code_hash = filebase64sha256(data.archive_file.mailer.output_path)
   runtime         = "python3.11"
   timeout         = 60
   memory_size     = 256

@@ -32,6 +32,9 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         
+      - name: Clean build artifacts
+        run: rm -rf build/
+
       - name: Terraform Init
         run: |
           terraform init \
