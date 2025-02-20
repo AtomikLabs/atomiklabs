@@ -72,8 +72,15 @@ resource "aws_sfn_state_machine" "arxiv_processor" {
 
   definition = jsonencode({
     Comment = "ArXiv paper processing workflow"
-    StartAt = "Process Papers"
+    StartAt = "Get Date"
     States = {
+      "Get Date" = {
+        Type = "Pass"
+        Parameters = {
+          "date.$": "$$.State.EnteredTime"
+        }
+        Next = "Process Papers"
+      },
       "Process Papers" = {
         Type = "Task"
         Resource = "arn:aws:states:::ecs:runTask.sync"
@@ -100,6 +107,7 @@ resource "aws_sfn_state_machine" "arxiv_processor" {
             "date.$": "$.date"
           }
         }
+        ResultPath = "$.taskresult"
         End = true
       }
     }
