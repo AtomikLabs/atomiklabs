@@ -72,16 +72,8 @@ resource "aws_sfn_state_machine" "arxiv_processor" {
 
   definition = jsonencode({
     Comment = "ArXiv paper processing workflow"
-    StartAt = "Get Date"
+    StartAt = "Process Papers"
     States = {
-      "Get Date" = {
-        Type = "Pass"
-        Parameters = {
-          "date": "$$.State.EnteredTime"
-        }
-        ResultPath = "$.date"
-        Next = "Process Papers"
-      },
       "Process Papers" = {
         Type = "Task"
         Resource = "arn:aws:states:::ecs:runTask.sync"
@@ -105,7 +97,7 @@ resource "aws_sfn_state_machine" "arxiv_processor" {
         Parameters = {
           FunctionName = aws_lambda_function.mailer.arn
           Payload = {
-            "date.$": "$.date"
+            "timestamp.$": "$$.State.EnteredTime"
           }
         }
         ResultPath = "$.taskresult"
