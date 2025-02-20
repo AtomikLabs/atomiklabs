@@ -1,7 +1,7 @@
 data "archive_file" "mailer" {
   type        = "zip"
   source_dir  = "${path.module}/../services/arxiv_mailer/src"
-  output_path = "${path.module}/build/mailer.zip"
+  output_path = "${path.module}/build/mailer-${timestamp()}.zip"
 }
 
 resource "aws_lambda_function" "mailer" {
@@ -17,6 +17,7 @@ resource "aws_lambda_function" "mailer" {
   environment {
     variables = {
       CONFIG_PATH = "/${var.project}/${var.environment}/arxiv"
+      DEPLOY_TIMESTAMP = timestamp()
     }
   }
 
