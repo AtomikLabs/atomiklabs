@@ -32,11 +32,8 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         
-      - name: Setup Lambda deployment
-        run: |
-          mkdir -p build/
-          cd ..
-          zip -r infra/build/mailer.zip services/arxiv_mailer/src/
+      - name: Setup build directory
+        run: mkdir -p build/
 
       - name: Terraform Init
         run: |

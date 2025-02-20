@@ -9,7 +9,6 @@ from botocore.exceptions import ClientError
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
 
-# Initialize AWS clients
 ssm = boto3.client('ssm')
 s3 = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb')
@@ -111,10 +110,8 @@ def send_email(recipients: list, subject: str, html_content: str):
 def lambda_handler(event, context):
     """Lambda handler to process and email research summaries"""
     try:
-        # Get configuration
         config = get_config()
         
-        # Get the date and id from the Step Functions input
         date = event.get('date')
         item_id = event.get('id')
         
@@ -122,10 +119,8 @@ def lambda_handler(event, context):
             logger.error(f"Missing required input parameters: {event}")
             raise ValueError("Missing required input parameters")
         
-        # Initialize DynamoDB table
         table = dynamodb.Table(config['dynamodb_table'])
         
-        # Get the daily summary record
         response = table.get_item(
             Key={
                 'id': item_id,
@@ -140,7 +135,6 @@ def lambda_handler(event, context):
                 'body': 'No papers to process'
             }
         
-        # Get the summaries from the daily summary record
         summaries = response['Item']['summaries']
         
         if not summaries:
@@ -150,7 +144,6 @@ def lambda_handler(event, context):
                 'body': 'No papers to process'
             }
         
-        # Format and send email
         html_content = format_html_email(date, summaries)
         send_email(
             recipients=config['recipients'],
