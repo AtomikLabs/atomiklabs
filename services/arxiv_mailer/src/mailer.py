@@ -120,26 +120,23 @@ def lambda_handler(event, context):
         # Initialize DynamoDB table
         table = dynamodb.Table(config['dynamodb_table'])
         
-        # Query papers for the date using the DateIndex GSI
-        response = table.query(
-            IndexName='DateIndex',
-            KeyConditionExpression='#date = :date',
-            ExpressionAttributeNames={
-                '#date': 'date'
-            },
-            ExpressionAttributeValues={
-                ':date': date
+        # Get the daily summary record
+        response = table.get_item(
+            Key={
+                'id': 'daily-summary',
+                'date': date
             }
         )
         
-        # Organize papers by category
-        summaries = {}
-        for paper in response['Items']:
-            category = paper['primary_category']
-            if category in config['categories']:
-                if category not in summaries:
-                    summaries[category] = {'papers': []}
-                summaries[category]['papers'].append(paper)
+        if 'Item' not in response:
+            logger.warning(f"No summary found for date {date}")
+            return {
+                'statusCode': 200,
+                'body': 'No papers to process'
+            }
+        
+        # Get the summaries from the daily summary record
+        summaries = response['Item']['summaries']
         
         if not summaries:
             logger.warning(f"No papers found for date {date}")
