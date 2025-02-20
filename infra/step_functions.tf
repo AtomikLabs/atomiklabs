@@ -111,7 +111,7 @@ resource "aws_sfn_state_machine" "arxiv_processor" {
           FunctionName = aws_lambda_function.mailer.arn
           Payload = {
             "id": "daily-summary",
-            "date.$": "$$.State.EnteredTime"
+            "date.$": "States.Format('YYYY-MM-dd', $$.State.EnteredTime)"
           }
         }
         ResultPath = "$.taskresult"

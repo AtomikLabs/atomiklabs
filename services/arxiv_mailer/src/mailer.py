@@ -114,8 +114,13 @@ def lambda_handler(event, context):
         # Get configuration
         config = get_config()
         
-        # Get the date from the Step Functions input
-        date = event.get('date', datetime.today().strftime('%Y-%m-%d'))
+        # Get the date and id from the Step Functions input
+        date = event.get('date')
+        item_id = event.get('id')
+        
+        if not date or not item_id:
+            logger.error(f"Missing required input parameters: {event}")
+            raise ValueError("Missing required input parameters")
         
         # Initialize DynamoDB table
         table = dynamodb.Table(config['dynamodb_table'])
@@ -123,7 +128,7 @@ def lambda_handler(event, context):
         # Get the daily summary record
         response = table.get_item(
             Key={
-                'id': 'daily-summary',
+                'id': item_id,
                 'date': date
             }
         )
