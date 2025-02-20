@@ -26,11 +26,11 @@ def get_config():
     try:
         params = ssm.get_parameters(
             Names=[
-                f"{config_path}/categories",
-                f"{config_path}/back_date",
-                f"{config_path}/set",
-                f"{config_path}/s3_bucket",
-                f"{config_path}/dynamodb_table"
+                f"{config_path}/arxiv/categories",
+                f"{config_path}/arxiv/back_date",
+                f"{config_path}/arxiv/set",
+                f"{config_path}/arxiv/s3_bucket",
+                f"{config_path}/arxiv/dynamodb_table"
             ]
         )
         config = {}
