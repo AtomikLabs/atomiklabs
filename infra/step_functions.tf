@@ -77,8 +77,9 @@ resource "aws_sfn_state_machine" "arxiv_processor" {
       "Get Date" = {
         Type = "Pass"
         Parameters = {
-          "date.$": "$$.State.EnteredTime"
+          "date": "$$.State.EnteredTime"
         }
+        ResultPath = "$.date"
         Next = "Process Papers"
       },
       "Process Papers" = {
@@ -112,4 +113,4 @@ resource "aws_sfn_state_machine" "arxiv_processor" {
       }
     }
   })
-} 
+}
