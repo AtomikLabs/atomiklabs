@@ -32,8 +32,11 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         
-      - name: Clean build artifacts
-        run: rm -rf build/
+      - name: Setup Lambda deployment
+        run: |
+          mkdir -p build/
+          cd ..
+          zip -r infra/build/mailer.zip services/arxiv_mailer/src/
 
       - name: Terraform Init
         run: |
@@ -106,5 +109,3 @@ jobs:
           echo "Building image for repository: ${{ env.ECR_REPO }}"
           docker build -t ${{ env.ECR_REPO }}:latest .
           docker push ${{ env.ECR_REPO }}:latest
-
-          
