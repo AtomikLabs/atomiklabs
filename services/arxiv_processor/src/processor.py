@@ -366,15 +366,30 @@ def main():
             all_records.extend(data["records"])
             
         if all_records:
-            # Store metadata for each paper
+            # Store metadata for each paper and collect by category
+            summaries = {}
             for record in all_records:
                 store_paper_metadata(record)
+                
+                category = record["primary_category"]
+                if category in CATEGORIES:
+                    if category not in summaries:
+                        summaries[category] = {"papers": []}
+                    summaries[category]["papers"].append(record)
             
-            # Create and upload summary documents
-            summary_files = create_research_summary(all_records, date)
-            
-            if summary_files:
+            # Store daily summary record
+            if summaries:
+                daily_summary = {
+                    "id": "daily-summary",
+                    "date": date,
+                    "summaries": summaries,
+                    "processed_date": datetime.utcnow().isoformat()
+                }
+                dynamodb.put_item(Item=daily_summary)
                 logging.info(f"Successfully processed {len(all_records)} papers for {date}")
+                
+                # Create and upload summary documents
+                summary_files = create_research_summary(all_records, date)
             else:
                 logging.warning(f"No papers in selected categories for {date}")
         else:

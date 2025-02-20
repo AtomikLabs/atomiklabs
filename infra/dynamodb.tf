@@ -14,12 +14,6 @@ resource "aws_dynamodb_table" "newsletter_metadata" {
     type = "S"
   }
 
-  global_secondary_index {
-    name               = "DateIndex"
-    hash_key           = "date"
-    projection_type    = "ALL"
-  }
-
   tags = merge(local.common_tags, {
     Name      = "newsletter-metadata"
     Component = "metadata"
