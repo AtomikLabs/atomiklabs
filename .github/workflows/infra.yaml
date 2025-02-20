@@ -75,7 +75,6 @@ jobs:
           terraform plan -out=tfplan
 
       - name: Terraform Apply
-        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         env:
           TF_VAR_environment: ${{ vars.ENVIRONMENT }}
           TF_VAR_region: ${{ vars.AWS_REGION }}
