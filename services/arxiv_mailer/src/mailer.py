@@ -1,10 +1,5 @@
-"""
-This lambda function sends an email to the recipients with the research summaries for the given date.
-"""
-import json
 import logging
 import os
-from datetime import datetime
 
 import boto3
 from botocore.exceptions import ClientError
