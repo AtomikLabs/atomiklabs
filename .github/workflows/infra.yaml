@@ -58,7 +58,6 @@ jobs:
 
   build-and-push:
     needs: terraform
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     environment: dev
     

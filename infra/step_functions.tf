@@ -88,6 +88,19 @@ resource "aws_sfn_state_machine" "arxiv_processor" {
               AssignPublicIp = "ENABLED"
             }
           }
+          Overrides = {
+            ContainerOverrides = [
+              {
+                Name = "arxiv-processor",
+                Environment = [
+                  {
+                    Name = "CONFIG_PATH",
+                    Value = "/atomiklabs/dev"
+                  }
+                ]
+              }
+            ]
+          }
         }
         Next = "Send Email"
       },
