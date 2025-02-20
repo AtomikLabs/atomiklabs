@@ -97,9 +97,10 @@ resource "aws_sfn_state_machine" "arxiv_processor" {
         Parameters = {
           FunctionName = aws_lambda_function.mailer.arn
           Payload = {
-            "date.$": "$.date"
+            "date.$": "States.Format('{}', States.TimestampToDate(States.AddDays(States.Timestamp(), -1)))"
           }
         }
+        ResultPath = "$.taskresult"
         End = true
       }
     }
