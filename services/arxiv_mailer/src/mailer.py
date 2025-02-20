@@ -120,8 +120,9 @@ def lambda_handler(event, context):
         # Initialize DynamoDB table
         table = dynamodb.Table(config['dynamodb_table'])
         
-        # Query papers for the date
+        # Query papers for the date using the DateIndex GSI
         response = table.query(
+            IndexName='DateIndex',
             KeyConditionExpression='#date = :date',
             ExpressionAttributeNames={
                 '#date': 'date'
@@ -162,4 +163,4 @@ def lambda_handler(event, context):
         
     except Exception as e:
         logger.error(f"Error in lambda_handler: {e}")
-        raise 
+        raise
