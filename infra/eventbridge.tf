@@ -26,22 +26,22 @@ resource "aws_iam_role_policy" "eventbridge" {
           "states:StartExecution"
         ]
         Resource = [
-          aws_sfn_state_machine.arxiv_processor.arn
+          aws_sfn_state_machine.daily_processor.arn
         ]
       }
     ]
   })
 }
 
-resource "aws_cloudwatch_event_rule" "daily_arxiv_processing" {
-  name                = "${local.resource_prefix}-daily-arxiv-${local.resource_suffix}"
-  description         = "Trigger daily ArXiv paper processing at 4 AM PT"
+resource "aws_cloudwatch_event_rule" "daily_processing" {
+  name                = "${local.resource_prefix}-daily-${local.resource_suffix}"
+  description         = "Trigger daily processing at 4 AM PT"
   schedule_expression = "cron(0 11 * * ? *)"
 }
 
-resource "aws_cloudwatch_event_target" "arxiv_processor" {
-  rule      = aws_cloudwatch_event_rule.daily_arxiv_processing.name
-  target_id = "TriggerArxivProcessing"
-  arn       = aws_sfn_state_machine.arxiv_processor.arn
+resource "aws_cloudwatch_event_target" "daily_processor" {
+  rule      = aws_cloudwatch_event_rule.daily_processing.name
+  target_id = "TriggerDailyProcessing"
+  arn       = aws_sfn_state_machine.daily_processor.arn
   role_arn  = aws_iam_role.eventbridge.arn
 } 

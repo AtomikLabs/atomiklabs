@@ -1,6 +1,6 @@
-output "arxiv_processor_repository_url" {
-  description = "URL of the ECR repository"
-  value       = aws_ecr_repository.arxiv_processor.repository_url
+output "ecr_repository_url" {
+  description = "URL of the daily processor ECR repository"
+  value       = aws_ecr_repository.daily_processor.repository_url
 }
 
 output "lambda_function_name" {

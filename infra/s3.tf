@@ -1,21 +1,21 @@
-resource "aws_s3_bucket" "newsletters" {
-  bucket = local.newsletter_bucket_name
+resource "aws_s3_bucket" "storage" {
+  bucket = local.storage_bucket_name
 
   tags = merge(local.common_tags, {
-    Name      = "newsletters"
+    Name      = "storage"
     Component = "storage"
   })
 }
 
-resource "aws_s3_bucket_versioning" "newsletters" {
-  bucket = aws_s3_bucket.newsletters.id
+resource "aws_s3_bucket_versioning" "storage" {
+  bucket = aws_s3_bucket.storage.id
   versioning_configuration {
     status = "Enabled"
   }
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "newsletters" {
-  bucket = aws_s3_bucket.newsletters.id
+resource "aws_s3_bucket_server_side_encryption_configuration" "storage" {
+  bucket = aws_s3_bucket.storage.id
 
   rule {
     apply_server_side_encryption_by_default {

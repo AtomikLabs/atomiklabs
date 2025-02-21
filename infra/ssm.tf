@@ -22,7 +22,7 @@ resource "aws_ssm_parameter" "arxiv_set" {
 resource "aws_ssm_parameter" "s3_bucket" {
   name  = "/${var.project}/${var.environment}/arxiv/s3_bucket"
   type  = "String"
-  value = aws_s3_bucket.newsletters.id
+  value = aws_s3_bucket.storage.id
   tags  = local.common_tags
 }
 
@@ -37,5 +37,26 @@ resource "aws_ssm_parameter" "email_recipients" {
   name  = "/${var.project}/${var.environment}/arxiv/email/recipients"
   type  = "String"
   value = join(",", var.email_config.recipients)
+  tags  = local.common_tags
+}
+
+resource "aws_ssm_parameter" "nvd_api_key" {
+  name  = "/${var.project}/${var.environment}/nvd/nvd_api_key"
+  type  = "SecureString"
+  value = var.nvd_api_key
+  tags  = local.common_tags
+}
+
+resource "aws_ssm_parameter" "nvd_monitored_systems" {
+  name  = "/${var.project}/${var.environment}/nvd/monitored_systems"
+  type  = "String"
+  value = jsonencode(var.monitored_systems)
+  tags  = local.common_tags
+}
+
+resource "aws_ssm_parameter" "nvd_s3_bucket" {
+  name  = "/${var.project}/${var.environment}/nvd/s3_bucket"
+  type  = "String"
+  value = aws_s3_bucket.storage.id
   tags  = local.common_tags
 } 

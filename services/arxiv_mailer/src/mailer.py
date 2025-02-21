@@ -64,54 +64,70 @@ def send_email_with_attachments(recipients: list, subject: str, body: str, attac
         logger.error(f"Error sending email: {e}")
         raise
 
+def get_s3_files(bucket: str, prefix: str) -> list:
+    """Get files from S3 with given prefix"""
+    try:
+        response = s3.list_objects_v2(
+            Bucket=bucket,
+            Prefix=prefix
+        )
+        if 'Contents' in response:
+            files = []
+            for obj in response['Contents']:
+                file_response = s3.get_object(Bucket=bucket, Key=obj['Key'])
+                filename = obj['Key'].split('/')[-1]
+                files.append({
+                    'data': file_response['Body'].read(),
+                    'filename': filename
+                })
+            return files
+        return []
+    except Exception as e:
+        logger.error(f"Error getting files from S3: {e}")
+        return []
+
 def lambda_handler(event, context):
-    """Lambda handler to email research summaries"""
+    """Lambda handler to email daily summaries"""
     try:
         config = get_config()
         today = datetime.today()
         date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
         
-        # List objects in the newsletters folder for yesterday
-        prefix = f"newsletters/{date}/"
-        response = s3.list_objects_v2(
-            Bucket=config['s3_bucket'],
-            Prefix=prefix
+        # Get ArXiv summaries
+        arxiv_files = get_s3_files(config['s3_bucket'], f"newsletters/{date}/")
+        
+        # Get NVD report
+        nvd_files = get_s3_files(config['s3_bucket'], f"reports/daily/{date}/")
+        
+        all_files = arxiv_files + nvd_files
+        
+        if not all_files:
+            logger.warning(f"No reports found for {date}")
+            return {
+                'statusCode': 200,
+                'body': 'No reports to send'
+            }
+        
+        body = f"Daily Summary for {date}\n\n"
+        
+        if arxiv_files:
+            body += "Attached are your arXiv research summaries.\n"
+        if nvd_files:
+            body += "Attached is the NVD vulnerability report.\n"
+            
+        body += "\nBest regards,\nAtomikLabs Daily Summary"
+        
+        send_email_with_attachments(
+            recipients=config['recipients'],
+            subject=f"AtomikLabs Daily Summary - {date}",
+            body=body,
+            attachments=all_files
         )
         
-        if 'Contents' not in response:
-            logger.warning(f"No summaries found for {date}")
-            return {
-                'statusCode': 200,
-                'body': 'No summaries to send'
-            }
-        
-        # Get each file's contents
-        attachments = []
-        for obj in response['Contents']:
-            file_response = s3.get_object(Bucket=config['s3_bucket'], Key=obj['Key'])
-            filename = obj['Key'].split('/')[-1]  # Get just the filename
-            attachments.append({
-                'data': file_response['Body'].read(),
-                'filename': filename
-            })
-        
-        if attachments:
-            body = f"Here are your arXiv research summaries for {date}.\n\nBest regards,\nArXiv Summarizer"
-            send_email_with_attachments(
-                recipients=config['recipients'],
-                subject=f"ArXiv Research Summaries - {date}",
-                body=body,
-                attachments=attachments
-            )
-            return {
-                'statusCode': 200,
-                'body': 'Email sent successfully'
-            }
-        else:
-            return {
-                'statusCode': 200,
-                'body': 'No summaries to send'
-            }
+        return {
+            'statusCode': 200,
+            'body': 'Email sent successfully'
+        }
         
     except Exception as e:
         logger.error(f"Error in lambda_handler: {e}")
