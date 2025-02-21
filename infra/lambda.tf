@@ -53,6 +53,17 @@ resource "aws_iam_role_policy" "lambda_mailer" {
       {
         Effect = "Allow"
         Action = [
+          "s3:ListBucket",
+          "s3:GetObject"
+        ]
+        Resource = [
+          aws_s3_bucket.newsletters.arn,
+          "${aws_s3_bucket.newsletters.arn}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "ssm:GetParameter",
           "ssm:GetParameters"
         ]
