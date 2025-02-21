@@ -22,7 +22,8 @@ def get_config():
         params = ssm.get_parameters(
             Names=[
                 f"{config_path}/s3_bucket",
-                f"{config_path}/email/recipients"
+                f"{config_path}/email/recipients",
+                f"{config_path}/email/sender"
             ]
         )
         config = {}
@@ -42,7 +43,7 @@ def send_email_with_attachments(recipients: list, subject: str, body: str, attac
     try:
         msg = MIMEMultipart()
         msg['Subject'] = subject
-        msg['From'] = f"no-reply@{ses.meta.region_name}.amazonses.com"
+        msg['From'] = recipients[0]  # Use first recipient as sender
         msg['To'] = ', '.join(recipients)
         
         # Add body
@@ -55,7 +56,7 @@ def send_email_with_attachments(recipients: list, subject: str, body: str, attac
             msg.attach(part)
         
         response = ses.send_raw_email(
-            Source=msg['From'],
+            Source=recipients[0],  # Use first recipient as sender
             Destinations=recipients,
             RawMessage={'Data': msg.as_string()}
         )
