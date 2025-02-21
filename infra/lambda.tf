@@ -10,7 +10,7 @@ resource "aws_lambda_function" "mailer" {
 
   environment {
     variables = {
-      CONFIG_PATH = "/${var.project}/${var.environment}"
+      CONFIG_PATH = "/${var.project}/${var.environment}/arxiv"
       DEPLOY_TIMESTAMP = timestamp()
     }
   }

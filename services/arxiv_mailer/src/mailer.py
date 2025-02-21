@@ -23,7 +23,7 @@ def get_config():
                 f"{config_path}/s3_bucket",
                 f"{config_path}/dynamodb_table",
                 f"{config_path}/email/recipients",
-                f"{config_path}/arxiv/back_date"
+                f"{config_path}/back_date"
             ]
         )
         config = {}
