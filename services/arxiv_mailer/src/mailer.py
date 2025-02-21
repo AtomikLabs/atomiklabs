@@ -1,6 +1,9 @@
 import logging
 import os
 from datetime import datetime, timedelta
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 import boto3
 from botocore.exceptions import ClientError
@@ -10,7 +13,6 @@ logging.getLogger().setLevel(logging.INFO)
 
 ssm = boto3.client('ssm')
 s3 = boto3.client('s3')
-dynamodb = boto3.resource('dynamodb')
 ses = boto3.client('ses')
 
 def get_config():
@@ -19,22 +21,15 @@ def get_config():
     try:
         params = ssm.get_parameters(
             Names=[
-                f"{config_path}/categories",
                 f"{config_path}/s3_bucket",
-                f"{config_path}/dynamodb_table",
-                f"{config_path}/email/recipients",
-                f"{config_path}/back_date"
+                f"{config_path}/email/recipients"
             ]
         )
         config = {}
         for param in params['Parameters']:
             name = param['Name'].split('/')[-1]
-            if name == 'categories':
+            if name == 'recipients':
                 config[name] = param['Value'].split(',')
-            elif name == 'recipients':
-                config[name] = param['Value'].split(',')
-            elif name == 'back_date':
-                config[name] = int(param['Value'])
             else:
                 config[name] = param['Value']
         return config
@@ -42,67 +37,27 @@ def get_config():
         logger.error(f"Error fetching config: {e}")
         raise
 
-def format_html_email(date: str, summaries: dict) -> str:
-    """Format HTML email with research summaries"""
-    html = f"""
-    <html>
-    <head>
-        <style>
-            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-            h1 {{ color: #2c5282; }}
-            h2 {{ color: #2b6cb0; margin-top: 20px; }}
-            .paper {{ margin: 15px 0; padding: 10px; border-left: 3px solid #4299e1; }}
-            .title {{ font-weight: bold; color: #2b6cb0; }}
-            .authors {{ font-style: italic; color: #4a5568; }}
-            .abstract {{ margin-top: 10px; }}
-            .links {{ margin-top: 5px; }}
-            a {{ color: #3182ce; text-decoration: none; }}
-            a:hover {{ text-decoration: underline; }}
-        </style>
-    </head>
-    <body>
-        <h1>ArXiv Research Summaries - {date}</h1>
-    """
-
-    for category, data in summaries.items():
-        html += f"<h2>{category} Papers</h2>"
-        for paper in data['papers']:
-            html += f"""
-            <div class="paper">
-                <div class="title">{paper['title']}</div>
-                <div class="authors">By: {', '.join([f"{a['first_name']} {a['last_name']}" for a in paper['authors']])}</div>
-                <div class="abstract">{paper['abstract']}</div>
-                <div class="links">
-                    <a href="{paper['abstract_url']}">Abstract</a> | 
-                    <a href="{paper['abstract_url'].replace('abs', 'pdf')}">PDF</a>
-                </div>
-            </div>
-            """
-
-    html += """
-    </body>
-    </html>
-    """
-    return html
-
-def send_email(recipients: list, subject: str, html_content: str):
-    """Send email using SES"""
+def send_email_with_attachments(recipients: list, subject: str, body: str, attachments: list):
+    """Send email with DOCX attachments using SES"""
     try:
-        response = ses.send_email(
-            Source=f"no-reply@{ses.meta.region_name}.amazonses.com",
-            Destination={
-                'ToAddresses': recipients
-            },
-            Message={
-                'Subject': {
-                    'Data': subject
-                },
-                'Body': {
-                    'Html': {
-                        'Data': html_content
-                    }
-                }
-            }
+        msg = MIMEMultipart()
+        msg['Subject'] = subject
+        msg['From'] = f"no-reply@{ses.meta.region_name}.amazonses.com"
+        msg['To'] = ', '.join(recipients)
+        
+        # Add body
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # Add attachments
+        for attachment in attachments:
+            part = MIMEApplication(attachment['data'])
+            part.add_header('Content-Disposition', 'attachment', filename=attachment['filename'])
+            msg.attach(part)
+        
+        response = ses.send_raw_email(
+            Source=msg['From'],
+            Destinations=recipients,
+            RawMessage={'Data': msg.as_string()}
         )
         logger.info(f"Email sent! Message ID: {response['MessageId']}")
     except ClientError as e:
@@ -110,55 +65,53 @@ def send_email(recipients: list, subject: str, html_content: str):
         raise
 
 def lambda_handler(event, context):
-    """Lambda handler to process and email research summaries"""
+    """Lambda handler to email research summaries"""
     try:
         config = get_config()
-        item_id = event.get('id')
-        
-        if not item_id:
-            logger.error(f"Missing required input parameters: {event}")
-            raise ValueError("Missing required input parameters")
-            
-        # Calculate date same way as processor
         today = datetime.today()
-        date = (today - timedelta(days=1)).strftime("%Y-%m-%d")  # Always process yesterday's papers
+        date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
         
-        table = dynamodb.Table(config['dynamodb_table'])
-        
-        response = table.get_item(
-            Key={
-                'id': item_id,
-                'date': date
-            }
+        # List objects in the newsletters folder for yesterday
+        prefix = f"newsletters/{date}/"
+        response = s3.list_objects_v2(
+            Bucket=config['s3_bucket'],
+            Prefix=prefix
         )
         
-        if 'Item' not in response:
-            logger.warning(f"No summary found for date {date}")
+        if 'Contents' not in response:
+            logger.warning(f"No summaries found for {date}")
             return {
                 'statusCode': 200,
-                'body': 'No papers to process'
+                'body': 'No summaries to send'
             }
         
-        summaries = response['Item']['summaries']
+        # Get each file's contents
+        attachments = []
+        for obj in response['Contents']:
+            file_response = s3.get_object(Bucket=config['s3_bucket'], Key=obj['Key'])
+            filename = obj['Key'].split('/')[-1]  # Get just the filename
+            attachments.append({
+                'data': file_response['Body'].read(),
+                'filename': filename
+            })
         
-        if not summaries:
-            logger.warning(f"No papers found for date {date}")
+        if attachments:
+            body = f"Here are your arXiv research summaries for {date}.\n\nBest regards,\nArXiv Summarizer"
+            send_email_with_attachments(
+                recipients=config['recipients'],
+                subject=f"ArXiv Research Summaries - {date}",
+                body=body,
+                attachments=attachments
+            )
             return {
                 'statusCode': 200,
-                'body': 'No papers to process'
+                'body': 'Email sent successfully'
             }
-        
-        html_content = format_html_email(date, summaries)
-        send_email(
-            recipients=config['recipients'],
-            subject=f"ArXiv Research Summaries - {date}",
-            html_content=html_content
-        )
-        
-        return {
-            'statusCode': 200,
-            'body': 'Email sent successfully'
-        }
+        else:
+            return {
+                'statusCode': 200,
+                'body': 'No summaries to send'
+            }
         
     except Exception as e:
         logger.error(f"Error in lambda_handler: {e}")
