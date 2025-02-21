@@ -1,15 +1,9 @@
-data "archive_file" "mailer" {
-  type        = "zip"
-  source_dir  = "${path.module}/../services/arxiv_mailer/src"
-  output_path = "${path.module}/build/mailer.zip"
-}
-
 resource "aws_lambda_function" "mailer" {
-  filename         = data.archive_file.mailer.output_path
+  filename         = "${path.module}/build/mailer.zip"
   function_name    = "${local.resource_prefix}-mailer-${local.resource_suffix}"
   role            = aws_iam_role.lambda_mailer.arn
   handler         = "mailer.lambda_handler"
-  source_code_hash = data.archive_file.mailer.output_base64sha256
+  source_code_hash = filebase64sha256("${path.module}/build/mailer.zip")
   runtime         = "python3.11"
   timeout         = 60
   memory_size     = 256
@@ -17,6 +11,7 @@ resource "aws_lambda_function" "mailer" {
   environment {
     variables = {
       CONFIG_PATH = "/${var.project}/${var.environment}/arxiv"
+      DEPLOY_TIMESTAMP = timestamp()
     }
   }
 
@@ -48,24 +43,23 @@ resource "aws_iam_role_policy" "lambda_mailer" {
       {
         Effect = "Allow"
         Action = [
-          "dynamodb:Query",
-          "dynamodb:GetItem"
+          "ssm:GetParameter",
+          "ssm:GetParameters"
         ]
         Resource = [
-          aws_dynamodb_table.newsletter_metadata.arn
+          aws_ssm_parameter.s3_bucket.arn,
+          aws_ssm_parameter.email_recipients.arn
         ]
       },
       {
         Effect = "Allow"
         Action = [
-          "ssm:GetParameter",
-          "ssm:GetParameters"
+          "s3:ListBucket",
+          "s3:GetObject"
         ]
         Resource = [
-          aws_ssm_parameter.arxiv_categories.arn,
-          aws_ssm_parameter.s3_bucket.arn,
-          aws_ssm_parameter.dynamodb_table.arn,
-          aws_ssm_parameter.email_recipients.arn
+          aws_s3_bucket.newsletters.arn,
+          "${aws_s3_bucket.newsletters.arn}/*"
         ]
       },
       {
@@ -88,4 +82,4 @@ resource "aws_iam_role_policy_attachment" "lambda_mailer_basic" {
 resource "aws_cloudwatch_log_group" "lambda_mailer" {
   name              = "/aws/lambda/${aws_lambda_function.mailer.function_name}"
   retention_in_days = 7
-} 
+}

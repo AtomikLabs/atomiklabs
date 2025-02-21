@@ -38,4 +38,4 @@ variable "email_config" {
   type = object({
     recipients = list(string)
   })
-} 
+}

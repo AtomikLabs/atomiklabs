@@ -88,6 +88,19 @@ resource "aws_sfn_state_machine" "arxiv_processor" {
               AssignPublicIp = "ENABLED"
             }
           }
+          Overrides = {
+            ContainerOverrides = [
+              {
+                Name = "arxiv-processor",
+                Environment = [
+                  {
+                    Name = "CONFIG_PATH",
+                    Value = "/atomiklabs/dev"
+                  }
+                ]
+              }
+            ]
+          }
         }
         Next = "Send Email"
       },
@@ -97,8 +110,7 @@ resource "aws_sfn_state_machine" "arxiv_processor" {
         Parameters = {
           FunctionName = aws_lambda_function.mailer.arn
           Payload = {
-            "id": "daily-summary",
-            "date.$": "$$.State.EnteredTime"
+            "id": "daily-summary"
           }
         }
         ResultPath = "$.taskresult"

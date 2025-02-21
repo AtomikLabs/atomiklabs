@@ -32,6 +32,27 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         
+      - name: Package Lambda
+        run: |
+          echo "Creating build directory..."
+          mkdir -p build
+          chmod 777 build
+          
+          echo "Packaging Lambda code..."
+          cd ../services/arxiv_mailer/src
+          zip -r ../../../infra/build/mailer.zip ./*
+          
+          echo "Verifying zip contents..."
+          cd ../../../infra
+          unzip -l build/mailer.zip
+          
+          echo "Build directory contents:"
+          ls -la build/
+          
+          echo "Calculating source_code_hash..."
+          sha256sum build/mailer.zip
+          base64 -w0 build/mailer.zip | sha256sum
+
       - name: Terraform Init
         run: |
           terraform init \
@@ -45,20 +66,31 @@ jobs:
           TF_VAR_region: ${{ vars.AWS_REGION }}
           TF_VAR_resource_uuid: ${{ vars.AWS_RESOURCE_UUID }}
           TF_VAR_email_config: ${{ vars.AWS_EMAIL_CONFIG }}
-        run: terraform plan -out=tfplan
+          TF_LOG: DEBUG
+        run: |
+          echo "Current directory contents:"
+          ls -la
+          echo "Build directory contents:"
+          ls -la build/
+          terraform plan -out=tfplan
 
       - name: Terraform Apply
-        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         env:
           TF_VAR_environment: ${{ vars.ENVIRONMENT }}
           TF_VAR_region: ${{ vars.AWS_REGION }}
           TF_VAR_resource_uuid: ${{ vars.AWS_RESOURCE_UUID }}
           TF_VAR_email_config: ${{ vars.AWS_EMAIL_CONFIG }}
-        run: terraform apply -auto-approve tfplan
+        run: |
+          terraform apply -auto-approve tfplan
+          
+          echo "Verifying Lambda function..."
+          aws lambda get-function \
+            --function-name $(terraform output -raw lambda_function_name) \
+            --query 'Configuration.[FunctionName,LastModified,CodeSize]' \
+            --output table
 
   build-and-push:
     needs: terraform
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     environment: dev
     
@@ -104,5 +136,3 @@ jobs:
           echo "Building image for repository: ${{ env.ECR_REPO }}"
           docker build -t ${{ env.ECR_REPO }}:latest .
           docker push ${{ env.ECR_REPO }}:latest
-
-          

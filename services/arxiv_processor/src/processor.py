@@ -26,11 +26,11 @@ def get_config():
     try:
         params = ssm.get_parameters(
             Names=[
-                f"{config_path}/categories",
-                f"{config_path}/back_date",
-                f"{config_path}/set",
-                f"{config_path}/s3_bucket",
-                f"{config_path}/dynamodb_table"
+                f"{config_path}/arxiv/categories",
+                f"{config_path}/arxiv/back_date",
+                f"{config_path}/arxiv/set",
+                f"{config_path}/arxiv/s3_bucket",
+                f"{config_path}/arxiv/dynamodb_table"
             ]
         )
         config = {}
@@ -375,10 +375,14 @@ def main():
             
             if summary_files:
                 logging.info(f"Successfully processed {len(all_records)} papers for {date}")
+                return
             else:
                 logging.warning(f"No papers in selected categories for {date}")
         else:
             logging.warning(f"No records found for {date}")
+    
+    # If we get here, no papers were processed
+    print(json.dumps({"error": "No papers were processed"}))
 
 if __name__ == "__main__":
     main()
