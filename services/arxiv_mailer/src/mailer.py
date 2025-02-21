@@ -22,8 +22,7 @@ def get_config():
         params = ssm.get_parameters(
             Names=[
                 f"{config_path}/s3_bucket",
-                f"{config_path}/email/recipients",
-                f"{config_path}/email/sender"
+                f"{config_path}/email/recipients"
             ]
         )
         config = {}

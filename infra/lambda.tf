@@ -43,11 +43,12 @@ resource "aws_iam_role_policy" "lambda_mailer" {
       {
         Effect = "Allow"
         Action = [
-          "dynamodb:Query",
-          "dynamodb:GetItem"
+          "ssm:GetParameter",
+          "ssm:GetParameters"
         ]
         Resource = [
-          aws_dynamodb_table.newsletter_metadata.arn
+          aws_ssm_parameter.s3_bucket.arn,
+          aws_ssm_parameter.email_recipients.arn
         ]
       },
       {
@@ -59,20 +60,6 @@ resource "aws_iam_role_policy" "lambda_mailer" {
         Resource = [
           aws_s3_bucket.newsletters.arn,
           "${aws_s3_bucket.newsletters.arn}/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ssm:GetParameter",
-          "ssm:GetParameters"
-        ]
-        Resource = [
-          aws_ssm_parameter.arxiv_categories.arn,
-          aws_ssm_parameter.s3_bucket.arn,
-          aws_ssm_parameter.dynamodb_table.arn,
-          aws_ssm_parameter.email_recipients.arn,
-          aws_ssm_parameter.arxiv_back_date.arn
         ]
       },
       {
