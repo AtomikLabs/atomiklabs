@@ -107,12 +107,10 @@ resource "aws_sfn_state_machine" "arxiv_processor" {
       "Send Email" = {
         Type = "Task"
         Resource = "arn:aws:states:::lambda:invoke"
-        InputPath = "$.Payload",
         Parameters = {
           FunctionName = aws_lambda_function.mailer.arn
           Payload = {
-            "id": "daily-summary",
-            "date.$": "$.date"
+            "id": "daily-summary"
           }
         }
         ResultPath = "$.taskresult"

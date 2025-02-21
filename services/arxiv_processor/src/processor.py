@@ -375,8 +375,6 @@ def main():
             
             if summary_files:
                 logging.info(f"Successfully processed {len(all_records)} papers for {date}")
-                # Return the date we processed for the Step Functions workflow
-                print(json.dumps({"date": date}))
                 return
             else:
                 logging.warning(f"No papers in selected categories for {date}")

@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime, timedelta
 
 import boto3
 from botocore.exceptions import ClientError
@@ -21,7 +22,8 @@ def get_config():
                 f"{config_path}/categories",
                 f"{config_path}/s3_bucket",
                 f"{config_path}/dynamodb_table",
-                f"{config_path}/email/recipients"
+                f"{config_path}/email/recipients",
+                f"{config_path}/arxiv/back_date"
             ]
         )
         config = {}
@@ -31,6 +33,8 @@ def get_config():
                 config[name] = param['Value'].split(',')
             elif name == 'recipients':
                 config[name] = param['Value'].split(',')
+            elif name == 'back_date':
+                config[name] = int(param['Value'])
             else:
                 config[name] = param['Value']
         return config
@@ -109,13 +113,15 @@ def lambda_handler(event, context):
     """Lambda handler to process and email research summaries"""
     try:
         config = get_config()
-        
-        date = event.get('date')
         item_id = event.get('id')
         
-        if not date or not item_id:
+        if not item_id:
             logger.error(f"Missing required input parameters: {event}")
             raise ValueError("Missing required input parameters")
+            
+        # Calculate date same way as processor
+        today = datetime.today()
+        date = (today - timedelta(days=1)).strftime("%Y-%m-%d")  # Always process yesterday's papers
         
         table = dynamodb.Table(config['dynamodb_table'])
         
