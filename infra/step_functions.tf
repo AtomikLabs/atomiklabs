@@ -97,7 +97,7 @@ resource "aws_sfn_state_machine" "daily_processor" {
                 Environment = [
                   {
                     Name = "CONFIG_PATH",
-                    Value = "/${var.project}/${var.environment}/arxiv"
+                    Value = "/${var.project}/${var.environment}"
                   }
                 ]
               }
@@ -127,7 +127,7 @@ resource "aws_sfn_state_machine" "daily_processor" {
                 Environment = [
                   {
                     Name = "CONFIG_PATH",
-                    Value = "/${var.project}/${var.environment}/nvd"
+                    Value = "/${var.project}/${var.environment}"
                   }
                 ]
               }

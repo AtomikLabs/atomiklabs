@@ -119,7 +119,7 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
       name  = "arxiv-processor"
       image = "${aws_ecr_repository.daily_processor.repository_url}:arxiv"
       environment = [
-        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}/arxiv" }
+        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
       ]
       logConfiguration = {
         logDriver = "awslogs"
