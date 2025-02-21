@@ -60,7 +60,8 @@ resource "aws_iam_role_policy" "lambda_mailer" {
           aws_ssm_parameter.arxiv_categories.arn,
           aws_ssm_parameter.s3_bucket.arn,
           aws_ssm_parameter.dynamodb_table.arn,
-          aws_ssm_parameter.email_recipients.arn
+          aws_ssm_parameter.email_recipients.arn,
+          aws_ssm_parameter.arxiv_back_date.arn
         ]
       },
       {
