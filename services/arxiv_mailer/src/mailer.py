@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+import json
 
 import boto3
 from botocore.exceptions import ClientError
@@ -91,35 +92,36 @@ def lambda_handler(event, context):
     try:
         config = get_config()
         today = datetime.today()
-        date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+        yesterday = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+        today_str = today.strftime("%Y-%m-%d")
         
-        # Get ArXiv summaries
-        arxiv_files = get_s3_files(config['s3_bucket'], f"newsletters/{date}/")
+        # Get ArXiv summaries (from yesterday due to arxiv's release schedule)
+        arxiv_files = get_s3_files(config['s3_bucket'], f"newsletters/{yesterday}/")
         
-        # Get NVD report
-        nvd_files = get_s3_files(config['s3_bucket'], f"reports/daily/{date}/")
+        # Get NVD report (from today for immediate vulnerability reporting)
+        nvd_files = get_s3_files(config['s3_bucket'], f"reports/daily/{today_str}/")
         
         all_files = arxiv_files + nvd_files
         
         if not all_files:
-            logger.warning(f"No reports found for {date}")
+            logger.warning(f"No reports found for arxiv({yesterday}) or nvd({today_str})")
             return {
                 'statusCode': 200,
                 'body': 'No reports to send'
             }
         
-        body = f"Daily Summary for {date}\n\n"
+        body = f"Daily Summary for {today_str}\n\n"
         
         if arxiv_files:
-            body += "Attached are your arXiv research summaries.\n"
+            body += f"Attached are your arXiv research summaries from {yesterday}.\n"
         if nvd_files:
-            body += "Attached is the NVD vulnerability report.\n"
+            body += "Attached is today's NVD vulnerability report.\n"
             
         body += "\nBest regards,\nAtomikLabs Daily Summary"
         
         send_email_with_attachments(
             recipients=config['recipients'],
-            subject=f"AtomikLabs Daily Summary - {date}",
+            subject=f"AtomikLabs Daily Summary - {today_str}",
             body=body,
             attachments=all_files
         )
