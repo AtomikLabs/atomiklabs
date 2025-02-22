@@ -42,8 +42,8 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           "s3:ListBucket"
         ]
         Resource = [
-          aws_s3_bucket.newsletters.arn,
-          "${aws_s3_bucket.newsletters.arn}/*"
+          aws_s3_bucket.storage.arn,
+          "${aws_s3_bucket.storage.arn}/*"
         ]
       },
       {
@@ -69,7 +69,10 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           aws_ssm_parameter.arxiv_back_date.arn,
           aws_ssm_parameter.arxiv_set.arn,
           aws_ssm_parameter.s3_bucket.arn,
-          aws_ssm_parameter.dynamodb_table.arn
+          aws_ssm_parameter.dynamodb_table.arn,
+          aws_ssm_parameter.nvd_api_key.arn,
+          aws_ssm_parameter.nvd_monitored_systems.arn,
+          aws_ssm_parameter.nvd_s3_bucket.arn
         ]
       }
     ]
@@ -97,8 +100,8 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-resource "aws_ecr_repository" "arxiv_processor" {
-  name = "${local.resource_prefix}-arxiv-processor-${local.resource_suffix}"
+resource "aws_ecr_repository" "daily_processor" {
+  name = "${local.resource_prefix}-daily-processor-${local.resource_suffix}"
   force_delete = true
 }
 
@@ -114,14 +117,42 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
   container_definitions = jsonencode([
     {
       name  = "arxiv-processor"
-      image = "${aws_ecr_repository.arxiv_processor.repository_url}:latest"
+      image = "${aws_ecr_repository.daily_processor.repository_url}:arxiv"
       environment = [
-        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}/arxiv" }
+        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
       ]
       logConfiguration = {
         logDriver = "awslogs"
         options = {
           awslogs-group         = "/ecs/${local.resource_prefix}-arxiv-processor-${local.resource_suffix}"
+          awslogs-region        = var.region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_task_definition" "nvd_checker" {
+  family                   = "${local.resource_prefix}-nvd-checker-${local.resource_suffix}"
+  requires_compatibilities = ["FARGATE"]
+  network_mode            = "awsvpc"
+  cpu                     = 512
+  memory                  = 1024
+  task_role_arn           = aws_iam_role.ecs_task_role.arn
+  execution_role_arn      = aws_iam_role.ecs_execution_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name  = "nvd-checker"
+      image = "${aws_ecr_repository.daily_processor.repository_url}:nvd"
+      environment = [
+        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = "/ecs/${local.resource_prefix}-nvd-checker-${local.resource_suffix}"
           awslogs-region        = var.region
           awslogs-stream-prefix = "ecs"
         }

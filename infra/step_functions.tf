@@ -29,7 +29,9 @@ resource "aws_iam_role_policy" "step_functions" {
         ]
         Resource = [
           aws_ecs_task_definition.arxiv_processor.arn,
-          replace(aws_ecs_task_definition.arxiv_processor.arn, "/:\\d+$/", ":*")
+          aws_ecs_task_definition.nvd_checker.arn,
+          replace(aws_ecs_task_definition.arxiv_processor.arn, "/:\\d+$/", ":*"),
+          replace(aws_ecs_task_definition.nvd_checker.arn, "/:\\d+$/", ":*")
         ]
       },
       {
@@ -66,12 +68,12 @@ resource "aws_iam_role_policy" "step_functions" {
   })
 }
 
-resource "aws_sfn_state_machine" "arxiv_processor" {
-  name     = "${local.resource_prefix}-arxiv-processor-${local.resource_suffix}"
+resource "aws_sfn_state_machine" "daily_processor" {
+  name     = "${local.resource_prefix}-daily-processor-${local.resource_suffix}"
   role_arn = aws_iam_role.step_functions.arn
 
   definition = jsonencode({
-    Comment = "ArXiv paper processing workflow"
+    Comment = "Daily processing workflow"
     StartAt = "Process Papers"
     States = {
       "Process Papers" = {
@@ -95,16 +97,46 @@ resource "aws_sfn_state_machine" "arxiv_processor" {
                 Environment = [
                   {
                     Name = "CONFIG_PATH",
-                    Value = "/atomiklabs/dev"
+                    Value = "/${var.project}/${var.environment}"
                   }
                 ]
               }
             ]
           }
         }
-        Next = "Send Email"
+        Next = "Check Vulnerabilities"
       },
-      "Send Email" = {
+      "Check Vulnerabilities" = {
+        Type = "Task"
+        Resource = "arn:aws:states:::ecs:runTask.sync"
+        Parameters = {
+          LaunchType = "FARGATE"
+          Cluster = aws_ecs_cluster.arxiv.arn
+          TaskDefinition = aws_ecs_task_definition.nvd_checker.arn
+          NetworkConfiguration = {
+            AwsvpcConfiguration = {
+              Subnets = data.aws_subnets.default.ids
+              SecurityGroups = [aws_security_group.ecs_tasks.id]
+              AssignPublicIp = "ENABLED"
+            }
+          }
+          Overrides = {
+            ContainerOverrides = [
+              {
+                Name = "nvd-checker",
+                Environment = [
+                  {
+                    Name = "CONFIG_PATH",
+                    Value = "/${var.project}/${var.environment}"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+        Next = "Send Daily Summary"
+      },
+      "Send Daily Summary" = {
         Type = "Task"
         Resource = "arn:aws:states:::lambda:invoke"
         Parameters = {

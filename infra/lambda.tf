@@ -10,7 +10,7 @@ resource "aws_lambda_function" "mailer" {
 
   environment {
     variables = {
-      CONFIG_PATH = "/${var.project}/${var.environment}/arxiv"
+      CONFIG_PATH = "/${var.project}/${var.environment}"
       DEPLOY_TIMESTAMP = timestamp()
     }
   }
@@ -48,7 +48,8 @@ resource "aws_iam_role_policy" "lambda_mailer" {
         ]
         Resource = [
           aws_ssm_parameter.s3_bucket.arn,
-          aws_ssm_parameter.email_recipients.arn
+          aws_ssm_parameter.email_recipients.arn,
+          aws_ssm_parameter.arxiv_back_date.arn
         ]
       },
       {
@@ -58,8 +59,8 @@ resource "aws_iam_role_policy" "lambda_mailer" {
           "s3:GetObject"
         ]
         Resource = [
-          aws_s3_bucket.newsletters.arn,
-          "${aws_s3_bucket.newsletters.arn}/*"
+          aws_s3_bucket.storage.arn,
+          "${aws_s3_bucket.storage.arn}/*"
         ]
       },
       {

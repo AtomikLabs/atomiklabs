@@ -66,6 +66,8 @@ jobs:
           TF_VAR_region: ${{ vars.AWS_REGION }}
           TF_VAR_resource_uuid: ${{ vars.AWS_RESOURCE_UUID }}
           TF_VAR_email_config: ${{ vars.AWS_EMAIL_CONFIG }}
+          TF_VAR_nvd_api_key: ${{ secrets.NVD_API_KEY }}
+          TF_VAR_monitored_systems: ${{ vars.MONITORED_SYSTEMS }}
           TF_LOG: DEBUG
         run: |
           echo "Current directory contents:"
@@ -80,6 +82,8 @@ jobs:
           TF_VAR_region: ${{ vars.AWS_REGION }}
           TF_VAR_resource_uuid: ${{ vars.AWS_RESOURCE_UUID }}
           TF_VAR_email_config: ${{ vars.AWS_EMAIL_CONFIG }}
+          TF_VAR_nvd_api_key: ${{ secrets.NVD_API_KEY }}
+          TF_VAR_monitored_systems: ${{ vars.MONITORED_SYSTEMS }}
         run: |
           terraform apply -auto-approve tfplan
           
@@ -120,19 +124,27 @@ jobs:
         working-directory: ./infra
         run: |
           echo "Getting ECR repository URL..."
-          REPO_URL=$(terraform output -raw arxiv_processor_repository_url)
-          echo "Repository URL: $REPO_URL"
+          REPO_URL=$(terraform output -raw ecr_repository_url)
           echo "ECR_REPO=$REPO_URL" >> "$GITHUB_ENV"
-          echo "Stored in ECR_REPO environment variable"
+          echo "Stored repository URL in environment variable"
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push image
+      - name: Build and push ArXiv processor
         working-directory: ./services/arxiv_processor
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          echo "Building image for repository: ${{ env.ECR_REPO }}"
-          docker build -t ${{ env.ECR_REPO }}:latest .
-          docker push ${{ env.ECR_REPO }}:latest
+          echo "Building ArXiv processor image for repository: ${{ env.ECR_REPO }}"
+          docker build -t ${{ env.ECR_REPO }}:arxiv .
+          docker push ${{ env.ECR_REPO }}:arxiv
+
+      - name: Build and push NVD checker
+        working-directory: ./services/nvd_checker
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "Building NVD checker image for repository: ${{ env.ECR_REPO }}"
+          docker build -t ${{ env.ECR_REPO }}:nvd .
+          docker push ${{ env.ECR_REPO }}:nvd

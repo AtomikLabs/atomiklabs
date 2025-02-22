@@ -13,7 +13,6 @@ import docx
 import requests
 from docx import Document
 from botocore.exceptions import ClientError
-from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
