@@ -48,7 +48,8 @@ resource "aws_iam_role_policy" "lambda_mailer" {
         ]
         Resource = [
           aws_ssm_parameter.s3_bucket.arn,
-          aws_ssm_parameter.email_recipients.arn
+          aws_ssm_parameter.email_recipients.arn,
+          aws_ssm_parameter.arxiv_back_date.arn
         ]
       },
       {
