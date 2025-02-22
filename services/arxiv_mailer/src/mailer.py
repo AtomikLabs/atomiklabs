@@ -1,6 +1,7 @@
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -102,8 +103,10 @@ def lambda_handler(event, context):
         config = get_config()
         logger.info(f"Using S3 bucket: {config['s3_bucket']}")
         
-        today = datetime.today()
-        logger.info(f"Current time (UTC): {today}")
+        # Use PST timezone
+        pst = ZoneInfo('America/Los_Angeles')
+        today = datetime.now(pst)
+        logger.info(f"Current time (PST): {today}")
         
         arxiv_date = (today - timedelta(days=config['back_date'])).strftime("%Y-%m-%d")  # Use back_date from SSM
         today_str = today.strftime("%Y-%m-%d")  # NVD reports from today
