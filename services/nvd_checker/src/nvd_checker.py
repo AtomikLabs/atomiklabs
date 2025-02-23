@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 import logging
 import requests
 import boto3
@@ -52,7 +52,7 @@ class NVDChecker:
 
     def get_last_modified_date(self):
         """Get vulnerabilities from the last 24 hours"""
-        return (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.000")
+        return (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.000")
 
     def search_vulnerabilities(self):
         """Search for vulnerabilities related to monitored systems"""
@@ -88,7 +88,7 @@ class NVDChecker:
                             "product": product
                         })
                         
-                except requests.exceptions.RequestException as e:
+                except (requests.exceptions.RequestException, requests.exceptions.JSONDecodeError) as e:
                     logger.error(f"Error fetching vulnerabilities for {vendor} {product}: {e}")
                     continue
 

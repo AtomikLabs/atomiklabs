@@ -2,6 +2,7 @@ import os
 os.environ["CONFIG_PATH"] = "/dummy"
 import types
 import sys
+from botocore.exceptions import ClientError
 
 # Inject fake modules to isolate external dependencies
 class FakeSSMForGlobal:
@@ -131,6 +132,27 @@ def test_store_paper_metadata():
     assert item["id"] == "id1"
     monkeypatch.undo()
 
+def test_store_paper_metadata_error():
+    """Test error handling in store_paper_metadata when DynamoDB fails"""
+    fake_dynamo = FakeDynamoTable()
+    fake_dynamo.put_item = lambda Item: (_ for _ in ()).throw(ClientError({"Error": {"Message": "DynamoDB Error"}}, "PutItem"))
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(processor, "dynamodb", fake_dynamo)
+    sample_record = {
+        "identifier": "id1",
+        "date": "2025-02-21",
+        "title": "Test Paper",
+        "authors": [{"first_name": "John", "last_name": "Doe"}],
+        "categories": ["Test"],
+        "primary_category": "Test",
+        "abstract_url": "http://arxiv.org/abs/1234",
+        "abstract": "Abstract text"
+    }
+    with pytest.raises(ClientError) as exc_info:
+        processor.store_paper_metadata(sample_record)
+    assert "DynamoDB Error" in str(exc_info.value)
+    monkeypatch.undo()
+
 # ----- Tests for upload_to_s3 -----
 
 def test_upload_to_s3():
@@ -225,6 +247,28 @@ def test_parse_xml_data():
     assert record["primary_category"] == "LG"
     assert record["categories"] == ["LG"]
 
+def test_parse_xml_data_malformed():
+    """Test parse_xml_data with malformed XML"""
+    malformed_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <ListRecords>
+    <record>
+      <header>
+        <identifier>oai:arxiv.org:1234.5678</identifier>
+      </header>
+      <metadata>
+        <dc:identifier xmlns:dc="http://purl.org/dc/elements/1.1/">http://arxiv.org/abs/1234.5678</dc:identifier>
+        <dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Test Title</dc:title>
+        <dc:date xmlns:dc="http://purl.org/dc/elements/1.1/">2025-02-21</dc:date>
+        <dc:creator xmlns:dc="http://purl.org/dc/elements/1.1/">Doe, John</dc:creator>
+        <dc:subject xmlns:dc="http://purl.org/dc/elements/1.1/">Computer Science - Machine Learning</dc:subject>
+      </metadata>
+    </record>
+  </ListRecords>
+</OAI-PMH>"""
+    result = processor.parse_xml_data(malformed_xml)
+    assert result["records"] == []
+
 # ----- Test for latex_to_human_readable -----
 
 def test_latex_to_human_readable():
@@ -233,6 +277,22 @@ def test_latex_to_human_readable():
     assert "alpha" in result
     assert "beta" in result
     assert "gamma" in result
+
+def test_latex_to_human_readable_comprehensive():
+    """Test latex_to_human_readable with various LaTeX constructs"""
+    test_cases = [
+        ("Simple formula $\\alpha + \\beta$", "alpha + beta"),
+        ("Multiple formulas $\\alpha$ and $\\beta$", "alpha and beta"),
+        ("With symbols $\\leq \\geq \\neq$", "<= >= !="),
+        ("Complex formula $\\sum_{i=1}^n \\alpha_i$", "∑ alpha"),
+        ("Greek letters $\\omega \\phi \\psi$", "omega phi psi"),
+        ("With braces {test}", "test"),
+        ("With escaped chars \\textbf{bold}", "bold"),
+    ]
+    for latex, expected in test_cases:
+        result = processor.latex_to_human_readable(latex)
+        for exp_part in expected.split():
+            assert exp_part in result
 
 # ----- Test for add_hyperlink -----
 
@@ -281,3 +341,82 @@ def test_create_research_summary(monkeypatch):
     summary_info = summary["Test Category"]
     assert summary_info["s3_key"].endswith("Test Category_research_summary.docx")
     assert len(summary_info["papers"]) == 1
+
+def test_create_research_summary_empty():
+    """Test create_research_summary with empty findings"""
+    fake_s3 = FakeS3()
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(processor, "s3", fake_s3)
+    date = "2025-02-21"
+    result = processor.create_research_summary([], date)
+    assert result == {}
+    monkeypatch.undo()
+
+def test_create_research_summary_error():
+    """Test create_research_summary with S3 upload error"""
+    fake_s3 = FakeS3()
+    def raise_error(*args, **kwargs):
+        raise ClientError({"Error": {"Message": "S3 Error"}}, "PutObject")
+    fake_s3.upload_fileobj = raise_error
+    
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(processor, "s3", fake_s3)
+    monkeypatch.setattr(processor, "CATEGORIES", ["AI"])
+    
+    date = "2025-02-21"
+    records = [{
+        "identifier": "id1",
+        "date": date,
+        "title": "Test Paper",
+        "authors": [{"first_name": "John", "last_name": "Doe"}],
+        "categories": ["AI"],
+        "primary_category": "AI",
+        "abstract_url": "http://arxiv.org/abs/1234",
+        "abstract": "Abstract text"
+    }]
+    
+    with pytest.raises(ClientError) as exc_info:
+        processor.create_research_summary(records, date)
+    assert "S3 Error" in str(exc_info.value)
+    monkeypatch.undo()
+
+def test_main_success():
+    """Test successful execution of main function"""
+    # Mock successful responses
+    xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <ListRecords>
+    <record>
+      <header><identifier>id1</identifier></header>
+      <metadata>
+        <dc:identifier xmlns:dc="http://purl.org/dc/elements/1.1/">http://arxiv.org/abs/1234</dc:identifier>
+        <dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Test Title</dc:title>
+        <dc:description xmlns:dc="http://purl.org/dc/elements/1.1/">Test Abstract</dc:description>
+        <dc:date xmlns:dc="http://purl.org/dc/elements/1.1/">2025-02-21</dc:date>
+        <dc:creator xmlns:dc="http://purl.org/dc/elements/1.1/">Doe, John</dc:creator>
+        <dc:subject xmlns:dc="http://purl.org/dc/elements/1.1/">Computer Science - Machine Learning</dc:subject>
+      </metadata>
+    </record>
+  </ListRecords>
+</OAI-PMH>"""
+    fake_resp = FakeResponse(200, xml_content, xml_content.encode('utf-8'))
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(processor.requests, "get", lambda *args, **kwargs: fake_resp)
+    monkeypatch.setattr(processor, "time", type("FakeTime", (), {"sleep": lambda x: None}))
+    processor.main()
+    monkeypatch.undo()
+
+def test_main_no_papers():
+    """Test main function when no papers are found"""
+    # Mock empty response
+    xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <ListRecords></ListRecords>
+</OAI-PMH>"""
+    fake_resp = FakeResponse(200, xml_content, xml_content.encode('utf-8'))
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(processor.requests, "get", lambda *args, **kwargs: fake_resp)
+    monkeypatch.setattr(processor, "time", type("FakeTime", (), {"sleep": lambda x: None}))
+    result = processor.main()
+    assert result == {"error": "No papers were processed"}
+    monkeypatch.undo()
