@@ -46,19 +46,39 @@ jobs:
           echo "Building common layer..."
           cd ../shared/arxiv_common
           pip install build
-          python -m build
+          python -m build || { echo "Failed to build package"; exit 1; }
+          
+          # Clean and prepare layer directory
+          rm -rf python
           mkdir -p python
-          pip install dist/*.whl -t python
+          
+          # Find and install the wheel
+          WHEEL_FILE=$(find dist -name "*.whl" -type f)
+          if [ -z "$WHEEL_FILE" ]; then
+            echo "No wheel file found in dist directory"
+            exit 1
+          fi
+          pip install "$WHEEL_FILE" -t python || { echo "Failed to install wheel"; exit 1; }
           zip -r ../../infra/build/arxiv_common_layer.zip python/
           
           echo "Packaging Lambda code..."
           cd ../../services/arxiv_mailer/src
+          if [ ! -d . ]; then
+            echo "Lambda source directory not found"
+            exit 1
+          fi
           zip -r ../../../infra/build/mailer.zip ./*
           
           echo "Verifying zip contents..."
           cd ../../../infra
-          unzip -l build/mailer.zip
-          unzip -l build/arxiv_common_layer.zip
+          if ! unzip -l build/mailer.zip; then
+            echo "Failed to verify mailer.zip"
+            exit 1
+          fi
+          if ! unzip -l build/arxiv_common_layer.zip; then
+            echo "Failed to verify arxiv_common_layer.zip"
+            exit 1
+          fi
           
           echo "Build directory contents:"
           ls -la build/
@@ -107,18 +127,6 @@ jobs:
             --function-name $(terraform output -raw lambda_function_name) \
             --query 'Configuration.[FunctionName,LastModified,CodeSize]' \
             --output table
-
-      - name: Build common package
-        run: |
-          cd shared/arxiv_common
-          python setup.py sdist bdist_wheel
-          
-      - name: Build Lambda layer
-        run: |
-          mkdir -p python
-          pip install shared/arxiv_common/dist/*.whl -t python
-          zip -r arxiv_common_layer.zip python/
-          mv arxiv_common_layer.zip infra/build/
 
   build-and-push:
     needs: terraform
