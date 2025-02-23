@@ -7,6 +7,7 @@ resource "aws_lambda_function" "mailer" {
   runtime         = "python3.11"
   timeout         = 60
   memory_size     = 256
+  layers          = [aws_lambda_layer_version.common.arn]
 
   environment {
     variables = {
@@ -83,4 +84,12 @@ resource "aws_iam_role_policy_attachment" "lambda_mailer_basic" {
 resource "aws_cloudwatch_log_group" "lambda_mailer" {
   name              = "/aws/lambda/${aws_lambda_function.mailer.function_name}"
   retention_in_days = 7
+}
+
+resource "aws_lambda_layer_version" "common" {
+  filename            = "${path.module}/build/arxiv_common_layer.zip"
+  layer_name         = "${local.resource_prefix}-common-${local.resource_suffix}"
+  compatible_runtimes = ["python3.11"]
+  
+  source_code_hash = filebase64sha256("${path.module}/build/arxiv_common_layer.zip")
 }

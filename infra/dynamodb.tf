@@ -2,7 +2,7 @@ resource "aws_dynamodb_table" "newsletter_metadata" {
   name           = local.metadata_table_name
   billing_mode   = "PAY_PER_REQUEST"
   hash_key       = "id"
-  range_key      = "date"
+  range_key      = "processed_date"
 
   attribute {
     name = "id"
@@ -10,16 +10,20 @@ resource "aws_dynamodb_table" "newsletter_metadata" {
   }
 
   attribute {
-    name = "date"
+    name = "processed_date"
+    type = "S"
+  }
+
+  attribute {
+    name = "primary_category"
     type = "S"
   }
 
   global_secondary_index {
-    name               = "DateIndex"
-    hash_key           = "date"
+    name               = "CategoryDateIndex"
+    hash_key           = "primary_category"
+    range_key         = "processed_date"
     projection_type    = "ALL"
-    read_capacity      = 1
-    write_capacity     = 1
   }
 
   tags = merge(local.common_tags, {

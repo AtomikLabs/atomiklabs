@@ -14,6 +14,9 @@ import requests
 from docx import Document
 from botocore.exceptions import ClientError
 
+from arxiv_common.models import ArxivPaper, Author
+from arxiv_common.utils.normalizers import normalize_author_name, normalize_abstract, normalize_categories
+
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
 
@@ -102,20 +105,29 @@ cs_categories_inverted = {
 def store_paper_metadata(record: dict):
     """Store paper metadata in DynamoDB"""
     try:
-        item = {
-            "id": record["identifier"],
-            "date": record["date"],
-            "title": record["title"],
-            "authors": record["authors"],
-            "categories": record["categories"],
-            "primary_category": record["primary_category"],
-            "abstract_url": record["abstract_url"],
-            "pdf_url": record["abstract_url"].replace("abs", "pdf"),
-            "set": "cs",
-            "abstract": record["abstract"],
-            "processed_date": datetime.now(UTC).isoformat()
-        }
-        dynamodb.put_item(Item=item)
+        # Normalize data
+        normalized_authors = [
+            Author(**normalize_author_name(author["first_name"], author["last_name"]))
+            for author in record["authors"]
+        ]
+        
+        # Create validated paper record
+        paper = ArxivPaper(
+            id=record["identifier"],
+            date=datetime.strptime(record["date"], "%Y-%m-%d"),
+            title=record["title"].strip(),
+            authors=normalized_authors,
+            categories=normalize_categories(record["categories"], cs_categories_inverted),
+            primary_category=record["primary_category"],
+            abstract_url=record["abstract_url"],
+            pdf_url=record["abstract_url"].replace("abs", "pdf"),
+            set="cs",
+            abstract=normalize_abstract(record["abstract"]),
+            processed_date=datetime.now(UTC)
+        )
+        
+        # Store validated and normalized data
+        dynamodb.put_item(Item=paper.dict())
     except ClientError as e:
         logger.error(f"Error storing metadata: {e}")
         raise
@@ -214,16 +226,28 @@ def parse_xml_data(xml_data: str) -> dict:
                 categories = list(filter(None, categories))
                 primary_category = categories[0] if categories else ""
 
-                extracted_data["records"].append({
-                    "identifier": identifier,
-                    "abstract_url": abstract_url,
-                    "authors": authors,
-                    "primary_category": primary_category,
-                    "categories": categories,
-                    "abstract": abstract,
-                    "title": title,
-                    "date": date
-                })
+                # Normalize authors
+                normalized_authors = [
+                    Author(**normalize_author_name(author["first_name"], author["last_name"]))
+                    for author in authors
+                ]
+                
+                # Create validated paper record
+                paper = ArxivPaper(
+                    id=identifier,
+                    date=datetime.strptime(date, "%Y-%m-%d"),
+                    abstract=normalize_abstract(abstract),
+                    abstract_url=abstract_url,
+                    authors=normalized_authors,
+                    categories=normalize_categories(categories, cs_categories_inverted),
+                    pdf_url=f"{abstract_url.replace('abs', 'pdf')}",
+                    primary_category=primary_category,
+                    processed_date=datetime.now(UTC),
+                    set="cs",
+                    title=title.strip()
+                )
+                
+                extracted_data["records"].append(paper.dict())
             except (AttributeError, IndexError) as e:
                 logger.warning(f"Error processing record: {e}")
                 continue
