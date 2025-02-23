@@ -3,7 +3,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from html import unescape
 from io import BytesIO
 
@@ -113,7 +113,7 @@ def store_paper_metadata(record: dict):
             "pdf_url": record["abstract_url"].replace("abs", "pdf"),
             "set": "cs",
             "abstract": record["abstract"],
-            "processed_date": datetime.utcnow().isoformat()
+            "processed_date": datetime.now(UTC).isoformat()
         }
         dynamodb.put_item(Item=item)
     except ClientError as e:
