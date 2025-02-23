@@ -38,8 +38,12 @@ jobs:
           mkdir -p build
           chmod 777 build
           
+          echo "Installing Lambda dependencies..."
+          cd ../services/arxiv_mailer
+          python -m pip install -r requirements.txt -t src/
+          
           echo "Packaging Lambda code..."
-          cd ../services/arxiv_mailer/src
+          cd src
           zip -r ../../../infra/build/mailer.zip ./*
           
           echo "Verifying zip contents..."
