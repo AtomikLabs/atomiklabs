@@ -6,6 +6,7 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import json
+import boto3
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
@@ -112,17 +113,19 @@ def get_s3_files(s3_client, bucket: str, prefix: str) -> list:
         logger.error(f"Error getting files from S3: {e}")
         return []
 
-def lambda_handler(event, context, *, ssm_client, s3_client, ses_client):
+def lambda_handler(event, context):
     """Lambda handler to email daily summaries
     
     Args:
         event: Lambda event
         context: Lambda context
-        ssm_client: boto3 SSM client
-        s3_client: boto3 S3 client
-        ses_client: boto3 SES client
     """
     try:
+        # Initialize AWS clients
+        ssm_client = boto3.client('ssm')
+        s3_client = boto3.client('s3')
+        ses_client = boto3.client('ses')
+        
         config = get_config(ssm_client)
         logger.info(f"Using S3 bucket: {config['s3_bucket']}")
         
