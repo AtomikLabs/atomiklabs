@@ -3,7 +3,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from html import unescape
 from io import BytesIO
 
@@ -113,7 +113,7 @@ def store_paper_metadata(record: dict):
             "pdf_url": record["abstract_url"].replace("abs", "pdf"),
             "set": "cs",
             "abstract": record["abstract"],
-            "processed_date": datetime.utcnow().isoformat()
+            "processed_date": datetime.now(UTC).isoformat()
         }
         dynamodb.put_item(Item=item)
     except ClientError as e:
@@ -182,38 +182,54 @@ def parse_xml_data(xml_data: str) -> dict:
         }
 
         for record in root.findall(".//oai:record", ns):
-            identifier = record.find(".//oai:identifier", ns).text
-            abstract_url = record.find(".//dc:identifier", ns).text
-            title = record.find(".//dc:title", ns).text.replace("\n", "")
-            abstract = record.find(".//dc:description", ns).text.replace("\n", " ")
-            date = record.find(".//dc:date", ns).text
+            try:
+                # Get required fields, skip record if any are missing
+                identifier_elem = record.find(".//oai:identifier", ns)
+                abstract_url_elem = record.find(".//dc:identifier", ns)
+                title_elem = record.find(".//dc:title", ns)
+                abstract_elem = record.find(".//dc:description", ns)
+                date_elem = record.find(".//dc:date", ns)
+                
+                if not all([e is not None and e.text is not None for e in [identifier_elem, abstract_url_elem, title_elem, abstract_elem, date_elem]]):
+                    logger.warning("Skipping record due to missing required fields")
+                    continue
+                
+                identifier = identifier_elem.text
+                abstract_url = abstract_url_elem.text
+                title = title_elem.text.replace("\n", "")
+                abstract = abstract_elem.text.replace("\n", " ")
+                date = date_elem.text
 
-            authors = []
-            for creator in record.findall(".//dc:creator", ns):
-                name_parts = creator.text.split(", ", 1)
-                authors.append({
-                    "last_name": name_parts[0],
-                    "first_name": name_parts[1] if len(name_parts) > 1 else ""
+                authors = []
+                for creator in record.findall(".//dc:creator", ns):
+                    if creator.text:
+                        name_parts = creator.text.split(", ", 1)
+                        authors.append({
+                            "last_name": name_parts[0],
+                            "first_name": name_parts[1] if len(name_parts) > 1 else ""
+                        })
+
+                subjects = record.findall(".//dc:subject", ns)
+                categories = [cs_categories_inverted.get(subject.text, "") for subject in subjects if subject.text]
+                categories = list(filter(None, categories))
+                primary_category = categories[0] if categories else ""
+
+                extracted_data["records"].append({
+                    "identifier": identifier,
+                    "abstract_url": abstract_url,
+                    "authors": authors,
+                    "primary_category": primary_category,
+                    "categories": categories,
+                    "abstract": abstract,
+                    "title": title,
+                    "date": date
                 })
-
-            subjects = record.findall(".//dc:subject", ns)
-            categories = [cs_categories_inverted.get(subject.text, "") for subject in subjects]
-            categories = list(filter(None, categories))
-            primary_category = categories[0] if categories else ""
-
-            extracted_data["records"].append({
-                "identifier": identifier,
-                "abstract_url": abstract_url,
-                "authors": authors,
-                "primary_category": primary_category,
-                "categories": categories,
-                "abstract": abstract,
-                "title": title,
-                "date": date
-            })
+            except (AttributeError, IndexError) as e:
+                logger.warning(f"Error processing record: {e}")
+                continue
 
     except ET.ParseError as e:
-        logging.error(f"Error parsing XML: {e}")
+        logger.error(f"Error parsing XML: {e}")
 
     return extracted_data
 
@@ -334,29 +350,27 @@ def create_research_summary(records: list, date: str) -> dict:
             
             # Upload to S3
             s3_key = f"newsletters/{date}/{category}_research_summary.docx"
-            upload_to_s3(docx_buffer, s3_key)
-            
+            upload_to_s3(docx_buffer, s3_key)  # Let the ClientError propagate up
             summary_files[category] = {
                 "s3_key": s3_key,
                 "papers": category_papers
             }
-            
             logging.info(f"Created and uploaded summary for {category}")
 
     return summary_files
 
 def main():
-    base_url = "http://export.arxiv.org/oai2"
+    """Main function to process papers"""
     today = datetime.today()
     
     for i in range(BACK_DATE):
         date = (today - timedelta(days=i+1)).strftime("%Y-%m-%d")
         logging.info(f"Processing papers for {date}")
         
-        xml_responses = fetch_data(base_url, date)
+        xml_responses = fetch_data("http://export.arxiv.org/oai2", date)
         
         if not xml_responses:
-            logging.warning(f"No data retrieved for {date}. Skipping...")
+            logging.warning(f"No records found for {date}")
             continue
             
         all_records = []
@@ -381,7 +395,7 @@ def main():
             logging.warning(f"No records found for {date}")
     
     # If we get here, no papers were processed
-    print(json.dumps({"error": "No papers were processed"}))
+    return {"error": "No papers were processed"}
 
 if __name__ == "__main__":
     main()
