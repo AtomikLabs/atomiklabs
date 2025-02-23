@@ -32,26 +32,41 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         
-      - name: Package Lambda
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Package Lambda and Layer
         run: |
           echo "Creating build directory..."
           mkdir -p build
           chmod 777 build
           
+          echo "Building common layer..."
+          cd ../shared/arxiv_common
+          pip install build
+          python -m build
+          mkdir -p python
+          pip install dist/*.whl -t python
+          zip -r ../../infra/build/arxiv_common_layer.zip python/
+          
           echo "Packaging Lambda code..."
-          cd ../services/arxiv_mailer/src
+          cd ../../services/arxiv_mailer/src
           zip -r ../../../infra/build/mailer.zip ./*
           
           echo "Verifying zip contents..."
           cd ../../../infra
           unzip -l build/mailer.zip
+          unzip -l build/arxiv_common_layer.zip
           
           echo "Build directory contents:"
           ls -la build/
           
           echo "Calculating source_code_hash..."
-          sha256sum build/mailer.zip
+          sha256sum build/mailer.zip build/arxiv_common_layer.zip
           base64 -w0 build/mailer.zip | sha256sum
+          base64 -w0 build/arxiv_common_layer.zip | sha256sum
 
       - name: Terraform Init
         run: |
