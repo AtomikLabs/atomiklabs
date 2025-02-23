@@ -1,9 +1,15 @@
 FROM python:3.11-slim
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
 
-COPY src/ .
+# Copy and install shared library first
+COPY shared/arxiv_common /tmp/arxiv_common
+RUN pip install /tmp/arxiv_common
 
-CMD ["python", "nvd_checker.py"] 
+# Then install service-specific requirements
+COPY services/nvd_checker/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY services/nvd_checker/src/ .
+
+CMD ["python", "checker.py"] 
