@@ -32,6 +32,11 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+        
       - name: Package Lambda
         run: |
           echo "Creating build directory..."
@@ -40,7 +45,7 @@ jobs:
           
           echo "Installing Lambda dependencies..."
           cd ../services/arxiv_mailer
-          python -m pip install -r requirements.txt -t src/
+          pip install --platform manylinux2014_x86_64 --implementation cp --python-version 3.11 --only-binary=:all: --target src/ -r requirements.txt
           
           echo "Packaging Lambda code..."
           cd src
