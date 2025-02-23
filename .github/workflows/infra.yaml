@@ -172,7 +172,8 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "Building ArXiv processor image for repository: ${{ env.ECR_REPO }}"
-          docker build -t ${{ env.ECR_REPO }}:arxiv .
+          cd ../..  # Move to repository root
+          docker build -t ${{ env.ECR_REPO }}:arxiv -f services/arxiv_processor/Dockerfile .
           docker push ${{ env.ECR_REPO }}:arxiv
 
       - name: Build and push NVD checker
@@ -181,5 +182,6 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "Building NVD checker image for repository: ${{ env.ECR_REPO }}"
-          docker build -t ${{ env.ECR_REPO }}:nvd .
+          cd ../..  # Move to repository root
+          docker build -t ${{ env.ECR_REPO }}:nvd -f services/nvd_checker/Dockerfile .
           docker push ${{ env.ECR_REPO }}:nvd
