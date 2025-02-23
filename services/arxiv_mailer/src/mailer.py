@@ -6,6 +6,8 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import json
+from docx import Document
+from io import BytesIO
 
 import boto3
 from botocore.exceptions import ClientError
@@ -137,10 +139,34 @@ def lambda_handler(event, context):
         
         body = f"Daily Summary for {today_str}\n\n"
         
+        categories = {}
+        for file in arxiv_files:
+            # Extract category from filename (e.g. "AI_research_summary.docx" -> "AI")
+            category = file['filename'].split('_')[0]
+            if category not in categories:
+                categories[category] = []
+            
+            doc = Document(BytesIO(file['data']))
+            
+            # Extract only title lines with PDF links
+            for para in doc.paragraphs:
+                text = para.text.strip()
+                if '[PDF]' in text:  # This is a title line
+                    categories[category].append(text)
+        
+        # Add categorized papers to email body
         if arxiv_files:
-            body += f"Attached are your arXiv research summaries from {arxiv_date}.\n"
+            body += f"ArXiv Research Summaries from {arxiv_date}:\n\n"
+            for category, titles in categories.items():
+                if titles:  # Only add categories that have papers
+                    body += f"{category}:\n"
+                    for title in titles:
+                        body += f"{title}\n"
+                    body += "\n"
+            body += "Full summaries are attached.\n\n"
+            
         if nvd_files:
-            body += "Attached is today's NVD vulnerability report.\n"
+            body += "Today's NVD vulnerability report is attached.\n"
             
         body += "\nBest regards,\nAtomikLabs Daily Summary"
         
