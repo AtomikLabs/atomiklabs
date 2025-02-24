@@ -22,6 +22,7 @@ def init_db():
             logger.info(f"Database already exists at {DB_PATH}")
             # Verify we can connect to it
             conn = sqlite3.connect(DB_PATH)
+            conn.execute("PRAGMA foreign_keys = ON")
             conn.close()
             logger.info("Successfully verified database connection")
             return
@@ -30,10 +31,11 @@ def init_db():
         
         # Create new database and schema
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
         
         # Enable foreign keys
-        cursor.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA foreign_keys = ON")
+        
+        cursor = conn.cursor()
         
         # Create schema
         cursor.executescript("""
