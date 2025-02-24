@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import re
@@ -13,6 +12,7 @@ import docx
 import requests
 from docx import Document
 from botocore.exceptions import ClientError
+from shared.db import SQLiteDB
 
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
@@ -28,8 +28,7 @@ def get_config():
                 f"{config_path}/arxiv/categories",
                 f"{config_path}/arxiv/back_date",
                 f"{config_path}/arxiv/set",
-                f"{config_path}/arxiv/s3_bucket",
-                f"{config_path}/arxiv/dynamodb_table"
+                f"{config_path}/arxiv/s3_bucket"
             ]
         )
         config = {}
@@ -51,10 +50,8 @@ CATEGORIES = config['categories']
 BACK_DATE = config['back_date']
 ARXIV_SET = config['set']
 S3_BUCKET = config['s3_bucket']
-DYNAMODB_TABLE = config['dynamodb_table']
 
 s3 = boto3.client('s3')
-dynamodb = boto3.resource('dynamodb').Table(DYNAMODB_TABLE)
 
 cs_categories_inverted = {
     "Computer Science - Artifical Intelligence": "AI",
@@ -100,23 +97,55 @@ cs_categories_inverted = {
 }
 
 def store_paper_metadata(record: dict):
-    """Store paper metadata in DynamoDB"""
+    """Store paper metadata in SQLite DB"""
     try:
-        item = {
-            "id": record["identifier"],
-            "date": record["date"],
-            "title": record["title"],
-            "authors": record["authors"],
-            "categories": record["categories"],
-            "primary_category": record["primary_category"],
-            "abstract_url": record["abstract_url"],
-            "pdf_url": record["abstract_url"].replace("abs", "pdf"),
-            "set": "cs",
-            "abstract": record["abstract"],
-            "processed_date": datetime.now(UTC).isoformat()
-        }
-        dynamodb.put_item(Item=item)
-    except ClientError as e:
+        db = SQLiteDB('/mnt/sqlite/arxiv.db')
+        with db.transaction() as conn:
+            # Insert paper with S3 keys
+            abstract_key = f"papers/{record['date']}/{record['identifier']}/abstract.txt"
+            pdf_key = f"papers/{record['date']}/{record['identifier']}/paper.pdf"
+            db.execute(
+                "INSERT INTO papers (arxiv_id, s3_abstract_key, s3_pdf_key) VALUES (?, ?, ?)",
+                (record["identifier"], abstract_key, pdf_key)
+            )
+            paper_id = conn.lastrowid
+
+            # Insert authors and relationships
+            for author in record["authors"]:
+                db.execute(
+                    "INSERT INTO authors (surname, given_names) VALUES (?, ?)",
+                    (author["last_name"], author["first_name"])
+                )
+                author_id = conn.lastrowid
+                db.execute(
+                    "INSERT INTO paper_authors (paper_id, author_id, author_order) VALUES (?, ?, ?)",
+                    (paper_id, author_id, record["authors"].index(author) + 1)
+                )
+
+            # Insert categories and relationships
+            for category in record["categories"]:
+                db.execute(
+                    "INSERT INTO arxiv_categories (category_code, category_name) VALUES (?, ?)",
+                    (category, cs_categories_inverted.get(category, category))
+                )
+                category_id = conn.lastrowid
+                db.execute(
+                    "INSERT INTO paper_categories (paper_id, category_id) VALUES (?, ?)",
+                    (paper_id, category_id)
+                )
+
+            # Insert set and relationship
+            db.execute(
+                "INSERT INTO arxiv_sets (set_name) VALUES (?)",
+                ("cs",)
+            )
+            set_id = conn.lastrowid
+            db.execute(
+                "INSERT INTO paper_sets (paper_id, set_id) VALUES (?, ?)",
+                (paper_id, set_id)
+            )
+
+    except Exception as e:
         logger.error(f"Error storing metadata: {e}")
         raise
 
@@ -387,6 +416,29 @@ def main():
             summary_files = create_research_summary(all_records, date)
             
             if summary_files:
+                # Record newsletters in database
+                db = SQLiteDB('/mnt/sqlite/arxiv.db')
+                with db.transaction() as conn:
+                    for category, info in summary_files.items():
+                        s3_key = f"newsletters/{date}/{category}_research_summary.docx"
+                        # Insert newsletter
+                        db.execute(
+                            "INSERT INTO newsletters (date, category_code, s3_key) VALUES (?, ?, ?)",
+                            (date, category, s3_key)
+                        )
+                        newsletter_id = conn.lastrowid
+
+                        # Link papers to newsletter
+                        for paper in info['papers']:
+                            paper_id = db.execute(
+                                "SELECT id FROM papers WHERE arxiv_id = ?",
+                                (paper['identifier'],)
+                            ).fetchone()[0]
+                            db.execute(
+                                "INSERT INTO newsletter_papers (newsletter_id, paper_id) VALUES (?, ?)",
+                                (newsletter_id, paper_id)
+                            )
+
                 logging.info(f"Successfully processed {len(all_records)} papers for {date}")
                 return
             else:

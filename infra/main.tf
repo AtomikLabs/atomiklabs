@@ -9,5 +9,4 @@ locals {
   resource_suffix = var.resource_uuid
 
   storage_bucket_name = "${local.resource_prefix}-storage-${local.resource_suffix}"
-  metadata_table_name   = "${local.resource_prefix}-metadata-${local.resource_suffix}"
 }

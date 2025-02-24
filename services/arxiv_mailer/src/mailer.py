@@ -1,13 +1,15 @@
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import json
+
 import boto3
 from botocore.exceptions import ClientError
+from shared.db import SQLiteDB
 
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
@@ -75,6 +77,7 @@ def send_email_with_attachments(ses_client, recipients: list, subject: str, body
             RawMessage={'Data': msg.as_string()}
         )
         logger.info(f"Email sent! Message ID: {response['MessageId']}")
+        return response['MessageId']
     except ClientError as e:
         logger.error(f"Error sending email: {e}")
         raise
@@ -104,7 +107,8 @@ def get_s3_files(s3_client, bucket: str, prefix: str) -> list:
                 logger.info(f"Read {len(data)} bytes from {filename}")
                 files.append({
                     'data': data,
-                    'filename': filename
+                    'filename': filename,
+                    's3_key': obj['Key']
                 })
             return files
         logger.warning(f"No files found in s3://{bucket}/{prefix}")
@@ -112,6 +116,45 @@ def get_s3_files(s3_client, bucket: str, prefix: str) -> list:
     except Exception as e:
         logger.error(f"Error getting files from S3: {e}")
         return []
+
+def get_unsent_newsletters(db: SQLiteDB, date: str) -> list:
+    """Get newsletters that haven't been sent yet
+    
+    Args:
+        db: SQLiteDB instance
+        date: Date string in YYYY-MM-DD format
+    """
+    return db.execute("""
+        SELECT n.id, n.category_code, n.s3_key
+        FROM newsletters n
+        LEFT JOIN newsletter_emails ne ON n.id = ne.newsletter_id
+        WHERE n.date = ? AND ne.newsletter_id IS NULL
+    """, (date,)).fetchall()
+
+def record_email_batch(db: SQLiteDB, date: str, recipients: list, newsletter_ids: list, message_id: str):
+    """Record that newsletters were sent in an email batch
+    
+    Args:
+        db: SQLiteDB instance
+        date: Date string in YYYY-MM-DD format
+        recipients: List of email addresses
+        newsletter_ids: List of newsletter IDs that were sent
+        message_id: SES message ID
+    """
+    with db.transaction() as conn:
+        # Record email batch
+        db.execute(
+            "INSERT INTO email_batches (date, recipient_list, message_id) VALUES (?, ?, ?)",
+            (date, ','.join(recipients), message_id)
+        )
+        batch_id = conn.lastrowid
+
+        # Link newsletters to batch
+        for newsletter_id in newsletter_ids:
+            db.execute(
+                "INSERT INTO newsletter_emails (newsletter_id, email_batch_id) VALUES (?, ?)",
+                (newsletter_id, batch_id)
+            )
 
 def lambda_handler(event, context):
     """Lambda handler to email daily summaries
@@ -139,19 +182,41 @@ def lambda_handler(event, context):
         logger.info(f"Looking for ArXiv summaries from: {arxiv_date}")
         logger.info(f"Looking for NVD reports from: {today_str}")
         
-        # Get ArXiv summaries using back_date from SSM
-        arxiv_path = f"newsletters/{arxiv_date}/"
-        logger.info(f"ArXiv path: {arxiv_path}")
-        arxiv_files = get_s3_files(s3_client, config['s3_bucket'], arxiv_path)
-        logger.info(f"Found {len(arxiv_files)} arxiv files: {[f['filename'] for f in arxiv_files]}")
-        
+        # Get unsent newsletters
+        db = SQLiteDB('/mnt/sqlite/arxiv.db')
+        unsent = get_unsent_newsletters(db, arxiv_date)
+        if not unsent:
+            logger.info(f"No unsent newsletters found for {arxiv_date}")
+            return {
+                'statusCode': 200,
+                'body': 'No newsletters to send'
+            }
+
+        # Get newsletter files directly from S3 using keys from DB
+        all_files = []
+        newsletter_ids = []
+        for newsletter_id, category, s3_key in unsent:
+            try:
+                file_response = s3_client.get_object(Bucket=config['s3_bucket'], Key=s3_key)
+                filename = s3_key.split('/')[-1]
+                data = file_response['Body'].read()
+                logger.info(f"Read {len(data)} bytes from {filename}")
+                all_files.append({
+                    'data': data,
+                    'filename': filename,
+                    's3_key': s3_key
+                })
+                newsletter_ids.append(newsletter_id)
+            except ClientError as e:
+                logger.error(f"Error getting newsletter {s3_key}: {e}")
+                continue
+
         # Get NVD report (from today for immediate vulnerability reporting)
         nvd_path = f"reports/daily/{today_str}/"
         logger.info(f"NVD path: {nvd_path}")
         nvd_files = get_s3_files(s3_client, config['s3_bucket'], nvd_path)
-        logger.info(f"Found {len(nvd_files)} nvd files: {[f['filename'] for f in nvd_files]}")
-        
-        all_files = arxiv_files + nvd_files
+        logger.info(f"Found {len(nvd_files)} nvd files")
+        all_files.extend(nvd_files)
         logger.info(f"Total files to send: {len(all_files)}")
         
         if not all_files:
@@ -163,19 +228,28 @@ def lambda_handler(event, context):
         
         body = f"Daily Summary for {today_str}\n\n"
         
-        if arxiv_files:
-            body += f"Attached are your arXiv research summaries from {arxiv_date}.\n"
+        if newsletter_ids:
+            body += f"Attached are your arXiv research summaries from {arxiv_date}.\n\n"
         if nvd_files:
             body += "Attached is today's NVD vulnerability report.\n"
             
         body += "\nBest regards,\nAtomikLabs Daily Summary"
         
-        send_email_with_attachments(
+        # Send email and record batch
+        message_id = send_email_with_attachments(
             ses_client=ses_client,
             recipients=config['recipients'],
             subject=f"AtomikLabs Daily Summary - {today_str}",
             body=body,
             attachments=all_files
+        )
+
+        record_email_batch(
+            db=db,
+            date=arxiv_date,
+            recipients=config['recipients'],
+            newsletter_ids=newsletter_ids,
+            message_id=message_id
         )
         
         return {

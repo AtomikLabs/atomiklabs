@@ -1,4 +1,12 @@
+resource "aws_lambda_layer_version" "shared" {
+  filename         = "${path.module}/build/shared_layer.zip"
+  layer_name      = "${local.resource_prefix}-shared-${local.resource_suffix}"
+  description     = "Shared database interface layer"
+  compatible_runtimes = ["python3.11"]
+}
+
 resource "aws_lambda_function" "mailer" {
+  layers          = [aws_lambda_layer_version.shared.arn]
   filename         = "${path.module}/build/mailer.zip"
   function_name    = "${local.resource_prefix}-mailer-${local.resource_suffix}"
   role            = aws_iam_role.lambda_mailer.arn
@@ -13,6 +21,16 @@ resource "aws_lambda_function" "mailer" {
       CONFIG_PATH = "/${var.project}/${var.environment}"
       DEPLOY_TIMESTAMP = timestamp()
     }
+  }
+
+  vpc_config {
+    subnet_ids         = data.aws_subnets.default.ids
+    security_group_ids = [aws_security_group.lambda_efs.id]
+  }
+
+  file_system_config {
+    arn = aws_efs_access_point.sqlite_data.arn
+    local_mount_path = "/mnt/sqlite"
   }
 
   tags = local.common_tags
@@ -70,6 +88,15 @@ resource "aws_iam_role_policy" "lambda_mailer" {
           "ses:SendRawEmail"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess"
+        ]
+        Resource = aws_efs_file_system.sqlite_storage.arn
       }
     ]
   })
@@ -78,6 +105,11 @@ resource "aws_iam_role_policy" "lambda_mailer" {
 resource "aws_iam_role_policy_attachment" "lambda_mailer_basic" {
   role       = aws_iam_role.lambda_mailer.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_mailer_vpc" {
+  role       = aws_iam_role.lambda_mailer.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
 resource "aws_cloudwatch_log_group" "lambda_mailer" {

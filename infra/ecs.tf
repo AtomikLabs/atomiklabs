@@ -49,18 +49,6 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
       {
         Effect = "Allow"
         Action = [
-          "dynamodb:PutItem",
-          "dynamodb:GetItem",
-          "dynamodb:Query",
-          "dynamodb:BatchWriteItem"
-        ]
-        Resource = [
-          aws_dynamodb_table.newsletter_metadata.arn
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
           "ssm:GetParameter",
           "ssm:GetParameters"
         ]
@@ -69,11 +57,19 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           aws_ssm_parameter.arxiv_back_date.arn,
           aws_ssm_parameter.arxiv_set.arn,
           aws_ssm_parameter.s3_bucket.arn,
-          aws_ssm_parameter.dynamodb_table.arn,
           aws_ssm_parameter.nvd_api_key.arn,
           aws_ssm_parameter.nvd_monitored_systems.arn,
           aws_ssm_parameter.nvd_s3_bucket.arn
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess"
+        ]
+        Resource = aws_efs_file_system.sqlite_storage.arn
       }
     ]
   })
@@ -100,8 +96,8 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-resource "aws_ecr_repository" "daily_processor" {
-  name = "${local.resource_prefix}-daily-processor-${local.resource_suffix}"
+resource "aws_ecr_repository" "services" {
+  name = "${local.resource_prefix}-services-${local.resource_suffix}"
   force_delete = true
 }
 
@@ -114,17 +110,82 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
   task_role_arn           = aws_iam_role.ecs_task_role.arn
   execution_role_arn      = aws_iam_role.ecs_execution_role.arn
 
+  volume {
+    name = "sqlite_data"
+    efs_volume_configuration {
+      file_system_id = aws_efs_file_system.sqlite_storage.id
+      root_directory = "/sqlite"
+      transit_encryption = "ENABLED"
+      authorization_config {
+        access_point_id = aws_efs_access_point.sqlite_data.id
+        iam = "ENABLED"
+      }
+    }
+  }
+
   container_definitions = jsonencode([
     {
       name  = "arxiv-processor"
-      image = "${aws_ecr_repository.daily_processor.repository_url}:arxiv"
-      environment = [
-        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
+      image = "${aws_ecr_repository.services.repository_url}:arxiv"
+      mountPoints = [
+        {
+          sourceVolume = "sqlite_data"
+          containerPath = "/mnt/sqlite"
+          readOnly = false
+        }
       ]
       logConfiguration = {
         logDriver = "awslogs"
         options = {
           awslogs-group         = "/ecs/${local.resource_prefix}-arxiv-processor-${local.resource_suffix}"
+          awslogs-region        = var.region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_task_definition" "db_init" {
+  family                   = "${local.resource_prefix}-db-init-${local.resource_suffix}"
+  requires_compatibilities = ["FARGATE"]
+  network_mode            = "awsvpc"
+  cpu                     = 256
+  memory                  = 512
+  task_role_arn           = aws_iam_role.ecs_task_role.arn
+  execution_role_arn      = aws_iam_role.ecs_execution_role.arn
+
+  volume {
+    name = "sqlite_data"
+    efs_volume_configuration {
+      file_system_id = aws_efs_file_system.sqlite_storage.id
+      root_directory = "/sqlite"
+      transit_encryption = "ENABLED"
+      authorization_config {
+        access_point_id = aws_efs_access_point.sqlite_data.id
+        iam = "ENABLED"
+      }
+    }
+  }
+
+  container_definitions = jsonencode([
+    {
+      name  = "db-init"
+      image = "${aws_ecr_repository.services.repository_url}:db-init"
+      environment = [
+        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
+      ]
+      mountPoints = [
+        {
+          sourceVolume = "sqlite_data"
+          containerPath = "/mnt/sqlite"
+          readOnly = false
+        }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = "/ecs/${local.resource_prefix}-db-init-${local.resource_suffix}"
           awslogs-region        = var.region
           awslogs-stream-prefix = "ecs"
         }
@@ -142,12 +203,32 @@ resource "aws_ecs_task_definition" "nvd_checker" {
   task_role_arn           = aws_iam_role.ecs_task_role.arn
   execution_role_arn      = aws_iam_role.ecs_execution_role.arn
 
+  volume {
+    name = "sqlite_data"
+    efs_volume_configuration {
+      file_system_id = aws_efs_file_system.sqlite_storage.id
+      root_directory = "/sqlite"
+      transit_encryption = "ENABLED"
+      authorization_config {
+        access_point_id = aws_efs_access_point.sqlite_data.id
+        iam = "ENABLED"
+      }
+    }
+  }
+
   container_definitions = jsonencode([
     {
       name  = "nvd-checker"
-      image = "${aws_ecr_repository.daily_processor.repository_url}:nvd"
+      image = "${aws_ecr_repository.services.repository_url}:nvd"
       environment = [
         { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
+      ]
+      mountPoints = [
+        {
+          sourceVolume = "sqlite_data"
+          containerPath = "/mnt/sqlite"
+          readOnly = false
+        }
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -159,4 +240,4 @@ resource "aws_ecs_task_definition" "nvd_checker" {
       }
     }
   ])
-} 
+}
