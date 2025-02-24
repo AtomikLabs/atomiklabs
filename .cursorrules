@@ -1,0 +1,31 @@
+REQUIRE_FILES:
+  - When modifying ANY code/resource/config, show all files containing:
+    - Direct references or imports
+    - Dependent code paths and usages
+    - Infrastructure dependencies
+    - Configuration dependencies
+    - Test coverage
+    - Deployment paths
+
+REQUIRE_COMPLETE_FILES:
+  - For ANY code changes
+  - For infrastructure changes
+  - For shared code/utilities
+  - For configuration changes
+  - For dependency changes
+  - For API/interface changes
+
+VERIFY_BEFORE_CHANGES:
+  - All references and usages found
+  - All dependencies identified
+  - All configurations aligned
+  - All tests affected
+  - All deployments impacted
+  - All security implications checked
+
+BLOCK_UNTIL:
+  - All dependent files are shown
+  - All usages are understood
+  - All impacts are traced
+  - Existing behavior is understood
+  - Changes are fully scoped 

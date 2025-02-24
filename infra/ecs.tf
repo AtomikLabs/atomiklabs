@@ -39,11 +39,14 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
         Action = [
           "s3:PutObject",
           "s3:GetObject",
-          "s3:ListBucket"
+          "s3:ListBucket",
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite"
         ]
         Resource = [
           aws_s3_bucket.storage.arn,
-          "${aws_s3_bucket.storage.arn}/*"
+          "${aws_s3_bucket.storage.arn}/*",
+          aws_efs_file_system.papers.arn
         ]
       },
       {
@@ -114,12 +117,32 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
   task_role_arn           = aws_iam_role.ecs_task_role.arn
   execution_role_arn      = aws_iam_role.ecs_execution_role.arn
 
+  volume {
+    name = "papers"
+    efs_volume_configuration {
+      file_system_id = aws_efs_file_system.papers.id
+      root_directory = "/"
+      transit_encryption = "ENABLED"
+      authorization_config {
+        access_point_id = aws_efs_access_point.papers.id
+        iam = "ENABLED"
+      }
+    }
+  }
+
   container_definitions = jsonencode([
     {
       name  = "arxiv-processor"
       image = "${aws_ecr_repository.daily_processor.repository_url}:arxiv"
       environment = [
         { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
+      ]
+      mountPoints = [
+        {
+          sourceVolume  = "papers"
+          containerPath = "/mnt/papers"
+          readOnly     = false
+        }
       ]
       logConfiguration = {
         logDriver = "awslogs"

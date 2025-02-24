@@ -15,6 +15,16 @@ resource "aws_lambda_function" "mailer" {
     }
   }
 
+  vpc_config {
+    subnet_ids         = data.aws_subnets.default.ids
+    security_group_ids = [aws_security_group.lambda_papers.id]
+  }
+
+  file_system_config {
+    arn = aws_efs_access_point.papers.arn
+    local_mount_path = "/mnt/papers"
+  }
+
   tags = local.common_tags
 }
 
@@ -40,6 +50,14 @@ resource "aws_iam_role_policy" "lambda_mailer" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite"
+        ]
+        Resource = aws_efs_file_system.papers.arn
+      },
       {
         Effect = "Allow"
         Action = [
@@ -83,4 +101,19 @@ resource "aws_iam_role_policy_attachment" "lambda_mailer_basic" {
 resource "aws_cloudwatch_log_group" "lambda_mailer" {
   name              = "/aws/lambda/${aws_lambda_function.mailer.function_name}"
   retention_in_days = 7
+}
+
+resource "aws_security_group" "lambda_papers" {
+  name        = "${local.resource_prefix}-lambda-papers-${local.resource_suffix}"
+  description = "Security group for Lambda to access EFS"
+  vpc_id      = data.aws_vpc.default.id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = local.common_tags
 }
