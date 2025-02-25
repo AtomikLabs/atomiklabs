@@ -79,8 +79,6 @@ restart: stop start
 clean:
 	@echo "$(RED)Cleaning up all containers and volumes...$(RESET)"
 	@$(DC) down -v
-	@rm -rf docker/efs/sqlite/*
-	@rm -rf docker/efs/sqlite-test/*
 
 # Run all tests
 test:

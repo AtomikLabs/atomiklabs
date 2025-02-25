@@ -30,25 +30,6 @@ resource "aws_s3_bucket" "storage" {
   force_destroy = true
 }
 
-resource "aws_efs_file_system" "sqlite_storage" {
-  creation_token = "${local.local_resource_prefix}-efs-${local.local_resource_suffix}"
-  tags = {
-    Name = "sqlite-storage"
-  }
-}
-
-resource "aws_efs_access_point" "sqlite_data" {
-  file_system_id = aws_efs_file_system.sqlite_storage.id
-  root_directory {
-    path = "/sqlite"
-    creation_info {
-      owner_gid   = 1000
-      owner_uid   = 1000
-      permissions = "755"
-    }
-  }
-}
-
 # Local SSM parameters
 resource "aws_ssm_parameter" "arxiv_categories" {
   name  = "/arxiv/local/arxiv_categories"

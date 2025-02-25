@@ -8,6 +8,7 @@ from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from io import BytesIO
+from shared.db import PostgresDB
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ class NVDChecker:
             "User-Agent": "AtomikLabs-VulnChecker/1.0"
         }
         self.s3 = boto3.client('s3')
+        self.db = PostgresDB()
 
     def _get_config(self):
         """Get configuration from SSM Parameter Store"""
@@ -49,6 +51,41 @@ class NVDChecker:
         except Exception as e:
             logger.error(f"Error fetching config: {e}")
             raise
+
+    def _init_database(self):
+        """Initialize the vulnerabilities database tables if they don't exist"""
+        with self.db.transaction() as conn:
+            cursor = conn.cursor()
+            
+            # Create vulnerabilities table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS vulnerabilities (
+                    id SERIAL PRIMARY KEY,
+                    cve_id TEXT UNIQUE NOT NULL,
+                    description TEXT NOT NULL,
+                    vendor TEXT NOT NULL,
+                    product TEXT NOT NULL,
+                    cvss_score FLOAT,
+                    cvss_severity TEXT,
+                    discovered_date DATE NOT NULL,
+                    report_s3_key TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Create index on CVE ID for faster lookups
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_vulnerabilities_cve_id 
+                ON vulnerabilities(cve_id)
+            """)
+            
+            # Create index on vendor and product for faster filtering
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_vulnerabilities_vendor_product 
+                ON vulnerabilities(vendor, product)
+            """)
+            
+            logger.info("Vulnerability database tables initialized")
 
     def get_last_modified_date(self):
         """Get vulnerabilities from the last 24 hours"""
@@ -93,6 +130,70 @@ class NVDChecker:
                     continue
 
         return findings
+
+    def store_vulnerabilities(self, findings, report_s3_key):
+        """Store vulnerability findings in the PostgreSQL database"""
+        # Initialize database tables if they don't exist
+        self._init_database()
+        
+        today = datetime.now().date()
+        stored_count = 0
+        
+        with self.db.transaction() as conn:
+            cursor = conn.cursor()
+            
+            for vendor, info in findings.items():
+                for vuln in info["vulnerabilities"]:
+                    # Extract CVSS metrics if available
+                    cvss_score = None
+                    cvss_severity = None
+                    if "baseScore" in vuln.get("metrics", {}):
+                        cvss_score = vuln["metrics"]["baseScore"]
+                        cvss_severity = vuln["metrics"]["baseSeverity"]
+                    
+                    # Check if this vulnerability already exists
+                    cursor.execute(
+                        "SELECT id FROM vulnerabilities WHERE cve_id = %s",
+                        (vuln["id"],)
+                    )
+                    result = cursor.fetchone()
+                    
+                    if result:
+                        # Update existing vulnerability
+                        cursor.execute("""
+                            UPDATE vulnerabilities 
+                            SET description = %s, 
+                                cvss_score = %s, 
+                                cvss_severity = %s,
+                                report_s3_key = %s
+                            WHERE cve_id = %s
+                        """, (
+                            vuln["description"],
+                            cvss_score,
+                            cvss_severity,
+                            report_s3_key,
+                            vuln["id"]
+                        ))
+                    else:
+                        # Insert new vulnerability
+                        cursor.execute("""
+                            INSERT INTO vulnerabilities 
+                            (cve_id, description, vendor, product, cvss_score, cvss_severity, discovered_date, report_s3_key)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (
+                            vuln["id"],
+                            vuln["description"],
+                            vendor,
+                            vuln["product"],
+                            cvss_score,
+                            cvss_severity,
+                            today,
+                            report_s3_key
+                        ))
+                        stored_count += 1
+                        
+        logger.info(f"Stored {stored_count} new vulnerabilities in the database")
+        return stored_count
 
     def generate_report(self, findings):
         """Generate a DOCX report from the findings and store in S3"""
@@ -151,7 +252,16 @@ def main():
         checker = NVDChecker()
         findings = checker.search_vulnerabilities()
         s3_key = checker.generate_report(findings)
-        return {"statusCode": 200, "body": "Success", "s3_key": s3_key}
+        
+        # Store vulnerabilities in PostgreSQL
+        stored_count = checker.store_vulnerabilities(findings, s3_key)
+        
+        return {
+            "statusCode": 200, 
+            "body": "Success", 
+            "s3_key": s3_key,
+            "stored_vulnerabilities": stored_count
+        }
     except Exception as e:
         logger.error(f"Error in NVD checker: {e}")
         return {"statusCode": 500, "body": "Internal server error", "error": str(e)}

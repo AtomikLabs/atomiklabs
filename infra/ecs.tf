@@ -59,17 +59,12 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           aws_ssm_parameter.s3_bucket.arn,
           aws_ssm_parameter.nvd_api_key.arn,
           aws_ssm_parameter.nvd_monitored_systems.arn,
-          aws_ssm_parameter.nvd_s3_bucket.arn
+          aws_ssm_parameter.nvd_s3_bucket.arn,
+          aws_ssm_parameter.db_password.arn,
+          aws_ssm_parameter.db_host.arn,
+          aws_ssm_parameter.db_name.arn,
+          aws_ssm_parameter.db_user.arn
         ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticfilesystem:ClientMount",
-          "elasticfilesystem:ClientWrite",
-          "elasticfilesystem:ClientRootAccess"
-        ]
-        Resource = aws_efs_file_system.sqlite_storage.arn
       }
     ]
   })
@@ -96,6 +91,39 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+resource "aws_iam_role_policy" "ecs_execution_policy" {
+  name = "${local.resource_prefix}-ecs-execution-policy-${local.resource_suffix}"
+  role = aws_iam_role.ecs_execution_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameters",
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          aws_ssm_parameter.db_password.arn,
+          "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/*"
+        ]
+      }
+    ]
+  })
+}
+
 resource "aws_ecr_repository" "services" {
   name = "${local.resource_prefix}-services-${local.resource_suffix}"
   force_delete = true
@@ -110,29 +138,19 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
   task_role_arn           = aws_iam_role.ecs_task_role.arn
   execution_role_arn      = aws_iam_role.ecs_execution_role.arn
 
-  volume {
-    name = "sqlite_data"
-    efs_volume_configuration {
-      file_system_id = aws_efs_file_system.sqlite_storage.id
-      root_directory = "/sqlite"
-      transit_encryption = "ENABLED"
-      authorization_config {
-        access_point_id = aws_efs_access_point.sqlite_data.id
-        iam = "ENABLED"
-      }
-    }
-  }
-
   container_definitions = jsonencode([
     {
       name  = "arxiv-processor"
       image = "${aws_ecr_repository.services.repository_url}:arxiv"
-      mountPoints = [
-        {
-          sourceVolume = "sqlite_data"
-          containerPath = "/mnt/sqlite"
-          readOnly = false
-        }
+      environment = [
+        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" },
+        { name = "DB_NAME", value = aws_db_instance.arxiv_db.db_name },
+        { name = "DB_USER", value = aws_db_instance.arxiv_db.username },
+        { name = "DB_HOST", value = aws_db_instance.arxiv_db.address },
+        { name = "DB_PORT", value = tostring(aws_db_instance.arxiv_db.port) }
+      ]
+      secrets = [
+        { name = "DB_PASSWORD", valueFrom = aws_ssm_parameter.db_password.arn }
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -155,32 +173,19 @@ resource "aws_ecs_task_definition" "db_init" {
   task_role_arn           = aws_iam_role.ecs_task_role.arn
   execution_role_arn      = aws_iam_role.ecs_execution_role.arn
 
-  volume {
-    name = "sqlite_data"
-    efs_volume_configuration {
-      file_system_id = aws_efs_file_system.sqlite_storage.id
-      root_directory = "/sqlite"
-      transit_encryption = "ENABLED"
-      authorization_config {
-        access_point_id = aws_efs_access_point.sqlite_data.id
-        iam = "ENABLED"
-      }
-    }
-  }
-
   container_definitions = jsonencode([
     {
       name  = "db-init"
       image = "${aws_ecr_repository.services.repository_url}:db-init"
       environment = [
-        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
+        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" },
+        { name = "DB_NAME", value = aws_db_instance.arxiv_db.db_name },
+        { name = "DB_USER", value = aws_db_instance.arxiv_db.username },
+        { name = "DB_HOST", value = aws_db_instance.arxiv_db.address },
+        { name = "DB_PORT", value = tostring(aws_db_instance.arxiv_db.port) }
       ]
-      mountPoints = [
-        {
-          sourceVolume = "sqlite_data"
-          containerPath = "/mnt/sqlite"
-          readOnly = false
-        }
+      secrets = [
+        { name = "DB_PASSWORD", valueFrom = aws_ssm_parameter.db_password.arn }
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -203,32 +208,19 @@ resource "aws_ecs_task_definition" "nvd_checker" {
   task_role_arn           = aws_iam_role.ecs_task_role.arn
   execution_role_arn      = aws_iam_role.ecs_execution_role.arn
 
-  volume {
-    name = "sqlite_data"
-    efs_volume_configuration {
-      file_system_id = aws_efs_file_system.sqlite_storage.id
-      root_directory = "/sqlite"
-      transit_encryption = "ENABLED"
-      authorization_config {
-        access_point_id = aws_efs_access_point.sqlite_data.id
-        iam = "ENABLED"
-      }
-    }
-  }
-
   container_definitions = jsonencode([
     {
       name  = "nvd-checker"
       image = "${aws_ecr_repository.services.repository_url}:nvd"
       environment = [
-        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
+        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" },
+        { name = "DB_NAME", value = aws_db_instance.arxiv_db.db_name },
+        { name = "DB_USER", value = aws_db_instance.arxiv_db.username },
+        { name = "DB_HOST", value = aws_db_instance.arxiv_db.address },
+        { name = "DB_PORT", value = tostring(aws_db_instance.arxiv_db.port) }
       ]
-      mountPoints = [
-        {
-          sourceVolume = "sqlite_data"
-          containerPath = "/mnt/sqlite"
-          readOnly = false
-        }
+      secrets = [
+        { name = "DB_PASSWORD", valueFrom = aws_ssm_parameter.db_password.arn }
       ]
       logConfiguration = {
         logDriver = "awslogs"

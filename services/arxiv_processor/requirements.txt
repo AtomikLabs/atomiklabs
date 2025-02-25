@@ -3,4 +3,5 @@ botocore==1.34.14
 feedparser==6.0.10
 python-dateutil==2.8.2
 requests==2.31.0
+psycopg2-binary==2.9.9
 -e ../shared

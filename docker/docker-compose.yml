@@ -6,7 +6,7 @@ services:
     ports:
       - "4566:4566"      # LocalStack Edge Proxy
     environment:
-      - SERVICES=s3,efs,ssm,ses,lambda,logs,iam
+      - SERVICES=s3,ssm,ses,lambda,logs,iam
       - DEFAULT_REGION=us-west-2
       - DOCKER_HOST=unix:///var/run/docker.sock
       - LAMBDA_EXECUTOR=docker
@@ -16,6 +16,22 @@ services:
       - ./localstack:/docker-entrypoint-initaws.d
       - /var/run/docker.sock:/var/run/docker.sock
       - localstack-data:/tmp/localstack
+
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=arxiv_app
+      - POSTGRES_PASSWORD=localdev
+      - POSTGRES_DB=arxiv
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arxiv_app"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   arxiv-processor:
     build:
@@ -28,10 +44,14 @@ services:
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_DEFAULT_REGION=us-west-2
       - CONFIG_PATH=/arxiv/local
-    volumes:
-      - ./efs/sqlite:/mnt/sqlite
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=arxiv_app
+      - DB_PASSWORD=localdev
+      - DB_NAME=arxiv
     depends_on:
       - localstack
+      - postgres
 
   db-init:
     build:
@@ -44,10 +64,16 @@ services:
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_DEFAULT_REGION=us-west-2
       - CONFIG_PATH=/arxiv/local
-    volumes:
-      - ./efs/sqlite:/mnt/sqlite
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=arxiv_app
+      - DB_PASSWORD=localdev
+      - DB_NAME=arxiv
     depends_on:
-      - localstack
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_started
 
   nvd-checker:
     build:
@@ -60,10 +86,15 @@ services:
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_DEFAULT_REGION=us-west-2
       - CONFIG_PATH=/arxiv/local
-    volumes:
-      - ./efs/sqlite:/mnt/sqlite
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=arxiv_app
+      - DB_PASSWORD=localdev
+      - DB_NAME=arxiv
     depends_on:
       - localstack
+      - postgres
 
 volumes:
   localstack-data:
+  postgres-data:

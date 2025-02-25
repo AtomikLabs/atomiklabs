@@ -213,11 +213,97 @@ def test_generate_report_s3_error():
     finally:
         fake_boto3.client = original_client
 
-def test_main_success():
-    """Test successful execution of main function"""
+def test_init_database(mock_db):
+    """Test database initialization creates the required tables"""
+    checker = NVDChecker()
+    checker._init_database()
+    
+    # Check that the appropriate queries were executed
+    queries = [q[0] for q in mock_db.queries]
+    
+    # Should create vulnerabilities table
+    assert any("CREATE TABLE IF NOT EXISTS vulnerabilities" in q for q in queries)
+    
+    # Should create indexes
+    assert any("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_cve_id" in q for q in queries)
+    assert any("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_vendor_product" in q for q in queries)
+
+def test_store_vulnerabilities_new(mock_db):
+    """Test storing new vulnerabilities in the database"""
+    checker = NVDChecker()
+    
+    findings = {
+        'vendor1': {
+            'criticality': 'high',
+            'vulnerabilities': [{
+                'id': 'CVE-2024-1234',
+                'description': 'Test vulnerability',
+                'metrics': {
+                    'baseScore': 7.5,
+                    'baseSeverity': 'HIGH'
+                },
+                'product': 'product1'
+            }]
+        }
+    }
+    
+    # Set up the mock cursor to return no existing vulnerabilities
+    conn = mock_db.transactions[0]
+    cursor = conn.cursor()
+    cursor.fetchone.return_value = None
+    
+    with patch('src.nvd_checker.datetime') as mock_datetime:
+        mock_now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
+        mock_datetime.now.return_value = mock_now
+        
+        stored_count = checker.store_vulnerabilities(findings, 's3_key')
+        
+        # Should return count of stored vulnerabilities
+        assert stored_count == 1
+        
+        # Check that INSERT was called
+        queries = [q[0] for q in mock_db.queries]
+        assert any("INSERT INTO vulnerabilities" in q for q in queries)
+
+def test_store_vulnerabilities_existing(mock_db):
+    """Test updating existing vulnerabilities in the database"""
+    checker = NVDChecker()
+    
+    findings = {
+        'vendor1': {
+            'criticality': 'high',
+            'vulnerabilities': [{
+                'id': 'CVE-2024-1234',
+                'description': 'Test vulnerability',
+                'metrics': {
+                    'baseScore': 7.5,
+                    'baseSeverity': 'HIGH'
+                },
+                'product': 'product1'
+            }]
+        }
+    }
+    
+    # Set up the mock cursor to return an existing vulnerability
+    conn = mock_db.transactions[0]
+    cursor = conn.cursor()
+    cursor.fetchone.return_value = (1,)  # ID of the existing vulnerability
+    
+    stored_count = checker.store_vulnerabilities(findings, 's3_key')
+    
+    # Should return count of stored vulnerabilities (0 for updates)
+    assert stored_count == 0
+    
+    # Check that UPDATE was called
+    queries = [q[0] for q in mock_db.queries]
+    assert any("UPDATE vulnerabilities" in q for q in queries)
+
+def test_main_success_with_db():
+    """Test successful execution of main function with database storage"""
     mock_checker = Mock()
     mock_checker.search_vulnerabilities.return_value = {"test": "findings"}
     mock_checker.generate_report.return_value = "test/s3/key"
+    mock_checker.store_vulnerabilities.return_value = 2
     
     with patch('src.nvd_checker.NVDChecker', return_value=mock_checker):
         result = main()
@@ -225,6 +311,10 @@ def test_main_success():
         assert result['statusCode'] == 200
         assert result['body'] == 'Success'
         assert result['s3_key'] == 'test/s3/key'
+        assert result['stored_vulnerabilities'] == 2
+        mock_checker.store_vulnerabilities.assert_called_once_with(
+            {"test": "findings"}, "test/s3/key"
+        )
 
 def test_main_error():
     """Test error handling in main function"""

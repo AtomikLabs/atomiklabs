@@ -9,11 +9,6 @@ terraform workspace new local || terraform workspace select local
 terraform apply -auto-approve
 cd ..
 
-# Create required directories
-echo "Creating required directories..."
-mkdir -p docker/efs/sqlite
-mkdir -p docker/efs/sqlite-test
-
 # Make init.sh executable
 chmod +x docker/localstack/init.sh
 
@@ -30,7 +25,7 @@ echo "Initializing LocalStack resources..."
 docker-compose -f docker/docker-compose.yml exec localstack /docker-entrypoint-initaws.d/init.sh
 
 # Start db-init service to initialize the database
-echo "Initializing SQLite database..."
+echo "Initializing PostgreSQL database..."
 docker-compose -f docker/docker-compose.yml --profile db up -d
 sleep 5  # Give db-init time to complete
 

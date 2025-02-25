@@ -22,9 +22,9 @@ resource "aws_security_group" "ecs_tasks" {
   }
 }
 
-resource "aws_security_group" "lambda_efs" {
-  name        = "${local.resource_prefix}-lambda-efs-${local.resource_suffix}"
-  description = "Security group for Lambda EFS access"
+resource "aws_security_group" "lambda_vpc" {
+  name        = "${local.resource_prefix}-lambda-vpc-${local.resource_suffix}"
+  description = "Security group for Lambda VPC access"
   vpc_id      = data.aws_vpc.default.id
 
   egress {
@@ -44,7 +44,7 @@ resource "aws_security_group" "efs" {
     from_port       = 2049
     to_port         = 2049
     protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id, aws_security_group.lambda_efs.id]
+    security_groups = [aws_security_group.ecs_tasks.id, aws_security_group.lambda_vpc.id]
   }
 }
 

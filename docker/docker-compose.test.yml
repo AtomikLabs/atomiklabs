@@ -3,37 +3,63 @@ version: '3.8'
 services:
   localstack:
     environment:
-      - SERVICES=s3,efs,ssm,ses,lambda,logs,iam
+      - SERVICES=s3,ssm,ses,lambda,logs,iam
       - DOCKER_HOST=unix:///var/run/docker.sock
       - DATA_DIR=/tmp/localstack/test/data
       - DEBUG=1
+
+  postgres:
+    environment:
+      - POSTGRES_USER=arxiv_test
+      - POSTGRES_PASSWORD=test_password
+      - POSTGRES_DB=arxiv_test
+    ports:
+      - "5433:5432"  # Different port for test DB to avoid conflicts
 
   arxiv-processor:
     environment:
       - CONFIG_PATH=/arxiv/test
       - PYTHONPATH=/app/src
       - TESTING=true
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=arxiv_test
+      - DB_PASSWORD=test_password
+      - DB_NAME=arxiv_test
     volumes:
-      - ./efs/sqlite-test:/mnt/sqlite
       - ../services/arxiv_processor/tests:/app/tests
     command: pytest /app/tests -v
+    depends_on:
+      - postgres
 
   db-init:
     environment:
       - CONFIG_PATH=/arxiv/test
       - PYTHONPATH=/app/src
       - TESTING=true
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=arxiv_test
+      - DB_PASSWORD=test_password
+      - DB_NAME=arxiv_test
     volumes:
-      - ./efs/sqlite-test:/mnt/sqlite
       - ../services/db_init/tests:/app/tests
     command: pytest /app/tests -v
+    depends_on:
+      - postgres
 
   nvd-checker:
     environment:
       - CONFIG_PATH=/arxiv/test
       - PYTHONPATH=/app/src
       - TESTING=true
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=arxiv_test
+      - DB_PASSWORD=test_password
+      - DB_NAME=arxiv_test
     volumes:
-      - ./efs/sqlite-test:/mnt/sqlite
       - ../services/nvd_checker/tests:/app/tests
     command: pytest /app/tests -v
+    depends_on:
+      - postgres

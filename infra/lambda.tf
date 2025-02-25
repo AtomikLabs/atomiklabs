@@ -20,17 +20,17 @@ resource "aws_lambda_function" "mailer" {
     variables = {
       CONFIG_PATH = "/${var.project}/${var.environment}"
       DEPLOY_TIMESTAMP = timestamp()
+      DB_NAME = aws_db_instance.arxiv_db.db_name
+      DB_USER = aws_db_instance.arxiv_db.username
+      DB_HOST = aws_db_instance.arxiv_db.address
+      DB_PORT = tostring(aws_db_instance.arxiv_db.port)
+      DB_PASSWORD = aws_ssm_parameter.db_password.name  # We reference the SSM param name, not the value
     }
   }
 
   vpc_config {
     subnet_ids         = data.aws_subnets.default.ids
-    security_group_ids = [aws_security_group.lambda_efs.id]
-  }
-
-  file_system_config {
-    arn = aws_efs_access_point.sqlite_data.arn
-    local_mount_path = "/mnt/sqlite"
+    security_group_ids = [aws_security_group.lambda_vpc.id]
   }
 
   tags = local.common_tags
@@ -67,7 +67,11 @@ resource "aws_iam_role_policy" "lambda_mailer" {
         Resource = [
           aws_ssm_parameter.s3_bucket.arn,
           aws_ssm_parameter.email_recipients.arn,
-          aws_ssm_parameter.arxiv_back_date.arn
+          aws_ssm_parameter.arxiv_back_date.arn,
+          aws_ssm_parameter.db_password.arn,
+          aws_ssm_parameter.db_host.arn,
+          aws_ssm_parameter.db_name.arn,
+          aws_ssm_parameter.db_user.arn
         ]
       },
       {
@@ -88,15 +92,6 @@ resource "aws_iam_role_policy" "lambda_mailer" {
           "ses:SendRawEmail"
         ]
         Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "elasticfilesystem:ClientMount",
-          "elasticfilesystem:ClientWrite",
-          "elasticfilesystem:ClientRootAccess"
-        ]
-        Resource = aws_efs_file_system.sqlite_storage.arn
       }
     ]
   })

@@ -1,3 +1,3 @@
-from .sqlite import DatabaseInterface, SQLiteDB
+from .postgres import PostgresDB, DatabaseInterface
 
-__all__ = ['DatabaseInterface', 'SQLiteDB']
+__all__ = ['DatabaseInterface', 'PostgresDB']

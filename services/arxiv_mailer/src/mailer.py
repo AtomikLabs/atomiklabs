@@ -9,7 +9,7 @@ import json
 
 import boto3
 from botocore.exceptions import ClientError
-from shared.db import SQLiteDB
+from shared.db import PostgresDB
 
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
@@ -117,42 +117,46 @@ def get_s3_files(s3_client, bucket: str, prefix: str) -> list:
         logger.error(f"Error getting files from S3: {e}")
         return []
 
-def get_unsent_newsletters(db: SQLiteDB, date: str) -> list:
+def get_unsent_newsletters(db: PostgresDB, date: str) -> list:
     """Get newsletters that haven't been sent yet
     
     Args:
-        db: SQLiteDB instance
+        db: PostgresDB instance
         date: Date string in YYYY-MM-DD format
     """
-    return db.execute("""
-        SELECT n.id, n.category_code, n.s3_key
-        FROM newsletters n
-        LEFT JOIN newsletter_emails ne ON n.id = ne.newsletter_id
-        WHERE n.date = ? AND ne.newsletter_id IS NULL
-    """, (date,)).fetchall()
+    with db.transaction() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT n.id, n.category_code, n.s3_key
+            FROM newsletters n
+            LEFT JOIN newsletter_emails ne ON n.id = ne.newsletter_id
+            WHERE n.date = %s AND ne.newsletter_id IS NULL
+        """, (date,))
+        return cursor.fetchall()
 
-def record_email_batch(db: SQLiteDB, date: str, recipients: list, newsletter_ids: list, message_id: str):
+def record_email_batch(db: PostgresDB, date: str, recipients: list, newsletter_ids: list, message_id: str):
     """Record that newsletters were sent in an email batch
     
     Args:
-        db: SQLiteDB instance
+        db: PostgresDB instance
         date: Date string in YYYY-MM-DD format
         recipients: List of email addresses
         newsletter_ids: List of newsletter IDs that were sent
         message_id: SES message ID
     """
     with db.transaction() as conn:
+        cursor = conn.cursor()
         # Record email batch
-        db.execute(
-            "INSERT INTO email_batches (date, recipient_list, message_id) VALUES (?, ?, ?)",
+        cursor.execute(
+            "INSERT INTO email_batches (date, recipient_list, message_id) VALUES (%s, %s, %s) RETURNING id",
             (date, ','.join(recipients), message_id)
         )
-        batch_id = conn.lastrowid
+        batch_id = cursor.fetchone()[0]
 
         # Link newsletters to batch
         for newsletter_id in newsletter_ids:
-            db.execute(
-                "INSERT INTO newsletter_emails (newsletter_id, email_batch_id) VALUES (?, ?)",
+            cursor.execute(
+                "INSERT INTO newsletter_emails (newsletter_id, email_batch_id) VALUES (%s, %s)",
                 (newsletter_id, batch_id)
             )
 
@@ -183,7 +187,7 @@ def lambda_handler(event, context):
         logger.info(f"Looking for NVD reports from: {today_str}")
         
         # Get unsent newsletters
-        db = SQLiteDB('/mnt/sqlite/arxiv.db')
+        db = PostgresDB()
         unsent = get_unsent_newsletters(db, arxiv_date)
         if not unsent:
             logger.info(f"No unsent newsletters found for {arxiv_date}")

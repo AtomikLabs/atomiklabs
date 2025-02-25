@@ -12,7 +12,7 @@ import docx
 import requests
 from docx import Document
 from botocore.exceptions import ClientError
-from shared.db import SQLiteDB
+from shared.db import PostgresDB
 
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
@@ -97,51 +97,69 @@ cs_categories_inverted = {
 }
 
 def store_paper_metadata(record: dict):
-    """Store paper metadata in SQLite DB"""
+    """Store paper metadata in PostgreSQL DB"""
     try:
-        db = SQLiteDB('/mnt/sqlite/arxiv.db')
+        db = PostgresDB()
         with db.transaction() as conn:
             # Insert paper with S3 keys
             abstract_key = f"papers/{record['date']}/{record['identifier']}/abstract.txt"
             pdf_key = f"papers/{record['date']}/{record['identifier']}/paper.pdf"
-            db.execute(
-                "INSERT INTO papers (arxiv_id, s3_abstract_key, s3_pdf_key) VALUES (?, ?, ?)",
+            
+            # Use RETURNING to get the new paper ID
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO papers (arxiv_id, s3_abstract_key, s3_pdf_key) VALUES (%s, %s, %s) RETURNING id",
                 (record["identifier"], abstract_key, pdf_key)
             )
-            paper_id = conn.lastrowid
+            paper_id = cursor.fetchone()[0]
 
             # Insert authors and relationships
             for author in record["authors"]:
-                db.execute(
-                    "INSERT INTO authors (surname, given_names) VALUES (?, ?)",
+                cursor.execute(
+                    "INSERT INTO authors (surname, given_names) VALUES (%s, %s) RETURNING id",
                     (author["last_name"], author["first_name"])
                 )
-                author_id = conn.lastrowid
-                db.execute(
-                    "INSERT INTO paper_authors (paper_id, author_id, author_order) VALUES (?, ?, ?)",
+                author_id = cursor.fetchone()[0]
+                cursor.execute(
+                    "INSERT INTO paper_authors (paper_id, author_id, author_order) VALUES (%s, %s, %s)",
                     (paper_id, author_id, record["authors"].index(author) + 1)
                 )
 
             # Insert categories and relationships
             for category in record["categories"]:
-                db.execute(
-                    "INSERT INTO arxiv_categories (category_code, category_name) VALUES (?, ?)",
-                    (category, cs_categories_inverted.get(category, category))
-                )
-                category_id = conn.lastrowid
-                db.execute(
-                    "INSERT INTO paper_categories (paper_id, category_id) VALUES (?, ?)",
+                # Check if category already exists
+                cursor.execute("SELECT id FROM arxiv_categories WHERE category_code = %s", (category,))
+                result = cursor.fetchone()
+                
+                if result:
+                    category_id = result[0]
+                else:
+                    cursor.execute(
+                        "INSERT INTO arxiv_categories (category_code, category_name) VALUES (%s, %s) RETURNING id",
+                        (category, cs_categories_inverted.get(category, category))
+                    )
+                    category_id = cursor.fetchone()[0]
+                    
+                cursor.execute(
+                    "INSERT INTO paper_categories (paper_id, category_id) VALUES (%s, %s)",
                     (paper_id, category_id)
                 )
 
             # Insert set and relationship
-            db.execute(
-                "INSERT INTO arxiv_sets (set_name) VALUES (?)",
-                ("cs",)
-            )
-            set_id = conn.lastrowid
-            db.execute(
-                "INSERT INTO paper_sets (paper_id, set_id) VALUES (?, ?)",
+            cursor.execute("SELECT id FROM arxiv_sets WHERE set_name = %s", ("cs",))
+            result = cursor.fetchone()
+            
+            if result:
+                set_id = result[0]
+            else:
+                cursor.execute(
+                    "INSERT INTO arxiv_sets (set_name) VALUES (%s) RETURNING id",
+                    ("cs",)
+                )
+                set_id = cursor.fetchone()[0]
+                
+            cursor.execute(
+                "INSERT INTO paper_sets (paper_id, set_id) VALUES (%s, %s)",
                 (paper_id, set_id)
             )
 
@@ -417,25 +435,27 @@ def main():
             
             if summary_files:
                 # Record newsletters in database
-                db = SQLiteDB('/mnt/sqlite/arxiv.db')
+                db = PostgresDB()
                 with db.transaction() as conn:
+                    cursor = conn.cursor()
                     for category, info in summary_files.items():
                         s3_key = f"newsletters/{date}/{category}_research_summary.docx"
                         # Insert newsletter
-                        db.execute(
-                            "INSERT INTO newsletters (date, category_code, s3_key) VALUES (?, ?, ?)",
+                        cursor.execute(
+                            "INSERT INTO newsletters (date, category_code, s3_key) VALUES (%s, %s, %s) RETURNING id",
                             (date, category, s3_key)
                         )
-                        newsletter_id = conn.lastrowid
+                        newsletter_id = cursor.fetchone()[0]
 
                         # Link papers to newsletter
                         for paper in info['papers']:
-                            paper_id = db.execute(
-                                "SELECT id FROM papers WHERE arxiv_id = ?",
+                            cursor.execute(
+                                "SELECT id FROM papers WHERE arxiv_id = %s",
                                 (paper['identifier'],)
-                            ).fetchone()[0]
-                            db.execute(
-                                "INSERT INTO newsletter_papers (newsletter_id, paper_id) VALUES (?, ?)",
+                            )
+                            paper_id = cursor.fetchone()[0]
+                            cursor.execute(
+                                "INSERT INTO newsletter_papers (newsletter_id, paper_id) VALUES (%s, %s)",
                                 (newsletter_id, paper_id)
                             )
 
