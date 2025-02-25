@@ -10,4 +10,8 @@ locals {
 
   storage_bucket_name = "${local.resource_prefix}-storage-${local.resource_suffix}"
   metadata_table_name   = "${local.resource_prefix}-metadata-${local.resource_suffix}"
+  
+  # Database configuration
+  db_name     = "atomiklabs"
+  db_username = "atomiklabs_app"
 }

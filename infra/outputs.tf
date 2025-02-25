@@ -7,3 +7,14 @@ output "lambda_function_name" {
   description = "Name of the mailer Lambda function"
   value       = aws_lambda_function.mailer.function_name
 }
+
+output "database_endpoint" {
+  description = "Endpoint of the RDS PostgreSQL database"
+  value       = aws_db_instance.postgres.endpoint
+  sensitive   = true
+}
+
+output "database_credentials_secret" {
+  description = "Name of the Secrets Manager secret containing database credentials"
+  value       = aws_secretsmanager_secret.db_credentials.name
+}

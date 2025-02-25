@@ -3,7 +3,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, UTC, date as date_type
 from html import unescape
 from io import BytesIO
 
@@ -13,6 +13,13 @@ import docx
 import requests
 from docx import Document
 from botocore.exceptions import ClientError
+
+# Import data layer components
+from atomiklabs_data import (
+    init_db, get_session, 
+    ArticleRepository, AuthorRepository, CategoryRepository, 
+    ProcessingEventRepository, NewsletterRepository
+)
 
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
@@ -28,8 +35,7 @@ def get_config():
                 f"{config_path}/arxiv/categories",
                 f"{config_path}/arxiv/back_date",
                 f"{config_path}/arxiv/set",
-                f"{config_path}/arxiv/s3_bucket",
-                f"{config_path}/arxiv/dynamodb_table"
+                f"{config_path}/arxiv/s3_bucket"
             ]
         )
         config = {}
@@ -46,15 +52,16 @@ def get_config():
         logger.error(f"Error fetching config: {e}")
         raise
 
+# Initialize the database connection
+init_db()
+
 config = get_config()
 CATEGORIES = config['categories']
 BACK_DATE = config['back_date']
 ARXIV_SET = config['set']
 S3_BUCKET = config['s3_bucket']
-DYNAMODB_TABLE = config['dynamodb_table']
 
 s3 = boto3.client('s3')
-dynamodb = boto3.resource('dynamodb').Table(DYNAMODB_TABLE)
 
 cs_categories_inverted = {
     "Computer Science - Artifical Intelligence": "AI",
@@ -99,24 +106,101 @@ cs_categories_inverted = {
     "Computer Science - Systems and Control": "SY",
 }
 
-def store_paper_metadata(record: dict):
-    """Store paper metadata in DynamoDB"""
+def store_paper_metadata(record: dict, job_id: str = None):
+    """
+    Store paper metadata in the database using repository pattern.
+    
+    Args:
+        record: The paper record containing metadata
+        job_id: Optional job ID for tracking
+    
+    Returns:
+        Article: The created or updated article
+    """
     try:
-        item = {
-            "id": record["identifier"],
-            "date": record["date"],
-            "title": record["title"],
-            "authors": record["authors"],
-            "categories": record["categories"],
-            "primary_category": record["primary_category"],
-            "abstract_url": record["abstract_url"],
-            "pdf_url": record["abstract_url"].replace("abs", "pdf"),
-            "set": "cs",
-            "abstract": record["abstract"],
-            "processed_date": datetime.now(UTC).isoformat()
-        }
-        dynamodb.put_item(Item=item)
-    except ClientError as e:
+        # Convert date string to date object
+        publication_date = datetime.fromisoformat(record["date"]).date()
+        
+        # Create or get article
+        with get_session() as session:
+            # Check if article already exists
+            article = ArticleRepository.get_article_by_source_id(
+                session=session,
+                source="arxiv",
+                source_id=record["identifier"]
+            )
+            
+            # If article doesn't exist, create it
+            if not article:
+                article = ArticleRepository.create_article(
+                    session=session,
+                    source_id=record["identifier"],
+                    source="arxiv",
+                    title=record["title"],
+                    publication_date=publication_date,
+                    abstract_text=record["abstract"],
+                    url=record["abstract_url"],
+                    s3_abstract_path=f"articles/arxiv/{publication_date.year}/{publication_date.month:02d}/{publication_date.day:02d}/{record['identifier']}/abstract.txt"
+                )
+                
+                # Create processing event for new article
+                ProcessingEventRepository.create_event(
+                    session=session,
+                    article_id=article.id,
+                    event_type="ingested",
+                    details={"source": "arxiv_processor"},
+                    source_job_id=job_id
+                )
+                
+                # Process categories
+                primary_cat_code = record["primary_category"]
+                
+                # Get or create categories
+                for cat_code in record["categories"]:
+                    # Get the category if it exists, or create it
+                    category = CategoryRepository.get_category_by_code(session, f"cs.{cat_code}")
+                    if not category:
+                        # Find the full name from the inverted map
+                        cat_name = next((k for k, v in cs_categories_inverted.items() if v == cat_code), None)
+                        if not cat_name:
+                            cat_name = f"Computer Science - {cat_code}"
+                        
+                        # Create the category
+                        category = CategoryRepository.create_category(
+                            session=session,
+                            name=cat_name,
+                            code=f"cs.{cat_code}",
+                            parent_id=None  # We'll need to get the parent ID from the database
+                        )
+                    
+                    # Add category to article
+                    is_primary = (cat_code == primary_cat_code)
+                    ArticleRepository.add_category_to_article(
+                        session=session,
+                        article_id=article.id,
+                        category_id=category.id,
+                        is_primary=is_primary
+                    )
+                
+                # Process authors
+                for idx, author_data in enumerate(record["authors"]):
+                    # Create author if doesn't exist
+                    author = AuthorRepository.create_author(
+                        session=session,
+                        name=f"{author_data['first_name']} {author_data['last_name']}"
+                    )
+                    
+                    # Add author to article with order
+                    ArticleRepository.add_author_to_article(
+                        session=session,
+                        article_id=article.id,
+                        author_id=author.id,
+                        order=idx
+                    )
+            
+            return article
+            
+    except Exception as e:
         logger.error(f"Error storing metadata: {e}")
         raise
 
@@ -148,155 +232,178 @@ def fetch_data(base_url: str, from_date: str) -> list:
             response.raise_for_status()
             full_xml_responses.append(response.text)
             
-            root = ET.fromstring(response.content)
-            resumption_token = root.find(".//{http://www.openarchives.org/OAI/2.0/}resumptionToken")
-
-            if resumption_token is not None and resumption_token.text:
-                logging.info(f"Found resumption token: {resumption_token.text}")
-                time.sleep(5)  # Be nice to the server
-                params = {"verb": "ListRecords", "resumptionToken": resumption_token.text}
-            else:
+            # Check for resumption token
+            tree = ET.fromstring(response.text)
+            namespaces = {"ns": "http://www.openarchives.org/OAI/2.0/"}
+            token = tree.find(".//ns:resumptionToken", namespaces)
+            
+            if token is None or not token.text:
                 break
-
-        except requests.exceptions.HTTPError as e:
-            logging.error(f"HTTP error occurred: {e}")
+                
+            # Use resumption token for next request
+            params = {"verb": "ListRecords", "resumptionToken": token.text}
+            
+            # Be nice to the API - sleep between requests
+            time.sleep(3)
+                
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error fetching data: {e}")
             break
-        except ET.ParseError as e:
-            logging.error(f"Parse error occurred: {e}")
-            break
-        except Exception as e:
-            logging.error(f"Unexpected error occurred: {e}")
-            break
-
+            
     return full_xml_responses
 
-def parse_xml_data(xml_data: str) -> dict:
-    """Parses XML data from arXiv"""
-    extracted_data = {"records": []}
-
+def parse_xml_data(xml_content: str) -> dict:
+    """Parses the OAI XML response and extracts relevant data"""
     try:
-        root = ET.fromstring(xml_data)
-        ns = {
+        root = ET.fromstring(xml_content)
+        namespaces = {
             "oai": "http://www.openarchives.org/OAI/2.0/",
-            "dc": "http://purl.org/dc/elements/1.1/"
+            "dc": "http://purl.org/dc/elements/1.1/",
+            "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/"
         }
-
-        for record in root.findall(".//oai:record", ns):
-            try:
-                # Get required fields, skip record if any are missing
-                identifier_elem = record.find(".//oai:identifier", ns)
-                abstract_url_elem = record.find(".//dc:identifier", ns)
-                title_elem = record.find(".//dc:title", ns)
-                abstract_elem = record.find(".//dc:description", ns)
-                date_elem = record.find(".//dc:date", ns)
-                
-                if not all([e is not None and e.text is not None for e in [identifier_elem, abstract_url_elem, title_elem, abstract_elem, date_elem]]):
-                    logger.warning("Skipping record due to missing required fields")
-                    continue
-                
-                identifier = identifier_elem.text
-                abstract_url = abstract_url_elem.text
-                title = title_elem.text.replace("\n", "")
-                abstract = abstract_elem.text.replace("\n", " ")
-                date = date_elem.text
-
-                authors = []
-                for creator in record.findall(".//dc:creator", ns):
-                    if creator.text:
-                        name_parts = creator.text.split(", ", 1)
-                        authors.append({
-                            "last_name": name_parts[0],
-                            "first_name": name_parts[1] if len(name_parts) > 1 else ""
-                        })
-
-                subjects = record.findall(".//dc:subject", ns)
-                categories = [cs_categories_inverted.get(subject.text, "") for subject in subjects if subject.text]
-                categories = list(filter(None, categories))
-                primary_category = categories[0] if categories else ""
-
-                extracted_data["records"].append({
-                    "identifier": identifier,
-                    "abstract_url": abstract_url,
-                    "authors": authors,
-                    "primary_category": primary_category,
-                    "categories": categories,
-                    "abstract": abstract,
-                    "title": title,
-                    "date": date
-                })
-            except (AttributeError, IndexError) as e:
-                logger.warning(f"Error processing record: {e}")
+        
+        records_data = []
+        records = root.findall(".//oai:record", namespaces)
+        
+        for record in records:
+            # Extract header data
+            header = record.find("oai:header", namespaces)
+            identifier = header.find("oai:identifier", namespaces).text
+            
+            # arxiv identifiers are in format oai:arXiv.org:2301.12345
+            arxiv_id = identifier.split(':')[-1]
+            
+            datestamp = header.find("oai:datestamp", namespaces).text[:10]  # YYYY-MM-DD
+            
+            # Extract subject categories
+            primary_category = None
+            categories = []
+            
+            setSpec_elements = header.findall("oai:setSpec", namespaces)
+            for setSpec in setSpec_elements:
+                if setSpec.text.startswith("cs."):
+                    category = setSpec.text.replace("cs.", "")
+                    categories.append(category)
+                    
+                    # Assume the first one is primary (or override if marked as cs)
+                    if primary_category is None or setSpec.text == "cs":
+                        primary_category = category
+            
+            # Skip if no CS categories
+            if not categories:
                 continue
+                
+            # Extract metadata
+            metadata = record.find("oai:metadata/oai_dc:dc", namespaces)
+            if metadata is None:
+                continue
+                
+            title = metadata.find("dc:title", namespaces)
+            title = title.text if title is not None else "No Title"
+            title = unescape(title).replace('\n', ' ').strip()
+            
+            # Extract authors
+            creators = metadata.findall("dc:creator", namespaces)
+            authors = []
+            
+            for creator in creators:
+                author_text = creator.text if creator is not None else ""
+                if author_text:
+                    # Common format: "Last Name, First Name"
+                    parts = author_text.split(',', 1)
+                    if len(parts) > 1:
+                        last_name = parts[0].strip()
+                        first_name = parts[1].strip()
+                    else:
+                        # Handle cases without commas: "First Name Last Name"
+                        name_parts = author_text.split()
+                        if len(name_parts) > 1:
+                            first_name = " ".join(name_parts[:-1])
+                            last_name = name_parts[-1]
+                        else:
+                            first_name = author_text
+                            last_name = ""
+                            
+                    authors.append({
+                        "first_name": first_name,
+                        "last_name": last_name
+                    })
+            
+            # Extract abstract
+            description = metadata.find("dc:description", namespaces)
+            abstract = description.text if description is not None else ""
+            abstract = abstract.strip()
+            
+            # ArXiv URL
+            abstract_url = f"https://arxiv.org/abs/{arxiv_id}"
+            
+            record_data = {
+                "identifier": arxiv_id,
+                "date": datestamp,
+                "title": title,
+                "authors": authors,
+                "categories": categories,
+                "primary_category": primary_category,
+                "abstract": abstract,
+                "abstract_url": abstract_url
+            }
+            
+            records_data.append(record_data)
+        
+        return {
+            "records": records_data
+        }
+    except Exception as e:
+        logging.error(f"Error parsing XML data: {e}")
+        raise
 
-    except ET.ParseError as e:
-        logger.error(f"Error parsing XML: {e}")
-
-    return extracted_data
-
-def latex_to_human_readable(latex_str: str) -> str:
-    """Converts LaTeX to human readable text"""
-    latex_str = re.sub(r"\$(.*?)\$", r"\1", latex_str)
+def latex_to_human_readable(text: str) -> str:
+    """Convert LaTeX-styled text to human readable format"""
+    # Replace common LaTeX commands
+    text = re.sub(r'\\emph{([^}]*)}', r'*\1*', text)
+    text = re.sub(r'\\textbf{([^}]*)}', r'**\1**', text)
+    text = re.sub(r'\\textit{([^}]*)}', r'*\1*', text)
     
-    replacements = {
-        "\\alpha": "alpha",
-        "\\beta": "beta",
-        "\\gamma": "gamma",
-        "\\delta": "delta",
-        "\\epsilon": "epsilon",
-        "\\zeta": "zeta",
-        "\\eta": "eta",
-        "\\theta": "theta",
-        "\\iota": "iota",
-        "\\kappa": "kappa",
-        "\\lambda": "lambda",
-        "\\mu": "mu",
-        "\\nu": "nu",
-        "\\xi": "xi",
-        "\\pi": "pi",
-        "\\rho": "rho",
-        "\\sigma": "sigma",
-        "\\tau": "tau",
-        "\\upsilon": "upsilon",
-        "\\phi": "phi",
-        "\\chi": "chi",
-        "\\psi": "psi",
-        "\\omega": "omega",
-        "\\leq": "<=",
-        "\\geq": ">=",
-        "\\neq": "!=",
-        "\\approx": "≈",
-        "\\times": "×",
-        "\\rightarrow": "→",
-        "\\leftarrow": "←",
-        "\\infty": "∞",
-        "\\pm": "±",
-        "\\sum": "∑",
-        "\\prod": "∏",
-        "\\int": "∫",
+    # Replace math environments
+    text = re.sub(r'\$([^$]*)\$', r'\1', text)
+    text = re.sub(r'\\\[(.*?)\\\]', r'\1', text, flags=re.DOTALL)
+    text = re.sub(r'\\\((.*?)\\\)', r'\1', text, flags=re.DOTALL)
+    
+    # Replace LaTeX characters
+    latex_replacements = {
+        '\\&': '&',
+        '\\%': '%',
+        '\\_': '_',
+        '\\$': '$',
+        '\\#': '#',
+        '{': '',
+        '}': ''
     }
     
-    for latex, text in replacements.items():
-        latex_str = latex_str.replace(latex, text)
-
-    latex_str = re.sub(r'\\[a-zA-Z]+', '', latex_str)
-    latex_str = latex_str.replace('  ', ' ')
-    latex_str = latex_str.replace('{', '').replace('}', '')
+    for latex, char in latex_replacements.items():
+        text = text.replace(latex, char)
     
-    return unescape(latex_str)
+    return text
 
 def add_hyperlink(paragraph, text, url):
     """Add a hyperlink to a paragraph"""
     part = paragraph.part
     r_id = part.relate_to(url, docx.opc.constants.RELATIONSHIP_TYPE.HYPERLINK, is_external=True)
     
+    # Create the hyperlink XML element
     hyperlink = docx.oxml.shared.OxmlElement('w:hyperlink')
     hyperlink.set(docx.oxml.shared.qn('r:id'), r_id)
     
+    # Create a new run
     new_run = docx.oxml.shared.OxmlElement('w:r')
+    
+    # Create a run properties element
     rPr = docx.oxml.shared.OxmlElement('w:rPr')
     
+    # Create style element
     rStyle = docx.oxml.shared.OxmlElement('w:rStyle')
     rStyle.set(docx.oxml.shared.qn('w:val'), 'Hyperlink')
+    
     rPr.append(rStyle)
     
     new_run.append(rPr)
@@ -307,9 +414,12 @@ def add_hyperlink(paragraph, text, url):
     
     return hyperlink
 
-def create_research_summary(records: list, date: str) -> dict:
+def create_research_summary(records: list, date: str, job_id: str = None) -> dict:
     """Creates research summary documents and returns file info"""
     summary_files = {}
+    
+    # Parse date string to date object
+    date_obj = datetime.fromisoformat(date).date()
     
     for category in CATEGORIES:
         doc = Document()
@@ -356,12 +466,54 @@ def create_research_summary(records: list, date: str) -> dict:
                 "papers": category_papers
             }
             logging.info(f"Created and uploaded summary for {category}")
+            
+            # Create newsletter record
+            with get_session() as session:
+                # Create newsletter entry
+                newsletter = NewsletterRepository.create_newsletter(
+                    session=session,
+                    title=f"arXiv {category} Research Summary",
+                    issue_date=date_obj,
+                    s3_path=s3_key
+                )
+                
+                # Add articles to newsletter
+                for paper in category_papers:
+                    # Get article
+                    article = ArticleRepository.get_article_by_source_id(
+                        session=session,
+                        source="arxiv",
+                        source_id=paper["identifier"]
+                    )
+                    
+                    if article:
+                        # Add to newsletter
+                        NewsletterRepository.add_article_to_newsletter(
+                            session=session,
+                            newsletter_id=newsletter.id,
+                            article_id=article.id
+                        )
+                        
+                        # Create processing event for inclusion in newsletter
+                        ProcessingEventRepository.create_event(
+                            session=session,
+                            article_id=article.id,
+                            event_type="included_in_newsletter",
+                            details={
+                                "newsletter_id": newsletter.id,
+                                "newsletter_title": newsletter.title,
+                                "newsletter_date": newsletter.issue_date.isoformat()
+                            },
+                            source_job_id=job_id
+                        )
 
     return summary_files
 
 def main():
     """Main function to process papers"""
     today = datetime.today()
+    job_id = f"arxiv-processor-{today.strftime('%Y%m%d%H%M%S')}"
+    logging.info(f"Starting job: {job_id}")
     
     for i in range(BACK_DATE):
         date = (today - timedelta(days=i+1)).strftime("%Y-%m-%d")
@@ -381,10 +533,11 @@ def main():
         if all_records:
             # Store metadata for each paper
             for record in all_records:
-                store_paper_metadata(record)
+                # Store in database with job ID for lineage tracking
+                store_paper_metadata(record, job_id)
             
             # Create and upload summary documents
-            summary_files = create_research_summary(all_records, date)
+            summary_files = create_research_summary(all_records, date, job_id)
             
             if summary_files:
                 logging.info(f"Successfully processed {len(all_records)} papers for {date}")

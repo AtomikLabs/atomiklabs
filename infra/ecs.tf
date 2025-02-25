@@ -61,18 +61,20 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
       {
         Effect = "Allow"
         Action = [
-          "ssm:GetParameter",
-          "ssm:GetParameters"
+          "ssm:GetParameters",
+          "ssm:GetParameter"
         ]
         Resource = [
-          aws_ssm_parameter.arxiv_categories.arn,
-          aws_ssm_parameter.arxiv_back_date.arn,
-          aws_ssm_parameter.arxiv_set.arn,
-          aws_ssm_parameter.s3_bucket.arn,
-          aws_ssm_parameter.dynamodb_table.arn,
-          aws_ssm_parameter.nvd_api_key.arn,
-          aws_ssm_parameter.nvd_monitored_systems.arn,
-          aws_ssm_parameter.nvd_s3_bucket.arn
+          "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/${var.environment}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          aws_secretsmanager_secret.db_credentials.arn
         ]
       }
     ]
@@ -119,7 +121,8 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
       name  = "arxiv-processor"
       image = "${aws_ecr_repository.daily_processor.repository_url}:arxiv"
       environment = [
-        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
+        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" },
+        { name = "DB_CREDENTIALS_SECRET", value = aws_secretsmanager_secret.db_credentials.name }
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -147,7 +150,8 @@ resource "aws_ecs_task_definition" "nvd_checker" {
       name  = "nvd-checker"
       image = "${aws_ecr_repository.daily_processor.repository_url}:nvd"
       environment = [
-        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
+        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" },
+        { name = "DB_CREDENTIALS_SECRET", value = aws_secretsmanager_secret.db_credentials.name }
       ]
       logConfiguration = {
         logDriver = "awslogs"

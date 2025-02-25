@@ -8,10 +8,17 @@ resource "aws_lambda_function" "mailer" {
   timeout         = 60
   memory_size     = 256
 
+  # VPC configuration to allow RDS access
+  vpc_config {
+    subnet_ids         = data.aws_subnets.default.ids
+    security_group_ids = [aws_security_group.lambda.id]
+  }
+
   environment {
     variables = {
       CONFIG_PATH = "/${var.project}/${var.environment}"
       DEPLOY_TIMESTAMP = timestamp()
+      DB_CREDENTIALS_SECRET = aws_secretsmanager_secret.db_credentials.name
     }
   }
 
@@ -43,23 +50,11 @@ resource "aws_iam_role_policy" "lambda_mailer" {
       {
         Effect = "Allow"
         Action = [
-          "ssm:GetParameter",
-          "ssm:GetParameters"
+          "s3:GetObject",
+          "s3:ListBucket"
         ]
         Resource = [
-          aws_ssm_parameter.s3_bucket.arn,
-          aws_ssm_parameter.email_recipients.arn,
-          aws_ssm_parameter.arxiv_back_date.arn
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:ListBucket",
-          "s3:GetObject"
-        ]
-        Resource = [
-          aws_s3_bucket.storage.arn,
+          "${aws_s3_bucket.storage.arn}",
           "${aws_s3_bucket.storage.arn}/*"
         ]
       },
@@ -70,6 +65,25 @@ resource "aws_iam_role_policy" "lambda_mailer" {
           "ses:SendRawEmail"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        Resource = [
+          "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/${var.environment}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          aws_secretsmanager_secret.db_credentials.arn
+        ]
       }
     ]
   })
@@ -80,7 +94,14 @@ resource "aws_iam_role_policy_attachment" "lambda_mailer_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+# Allow Lambda to create network interfaces for VPC access
+resource "aws_iam_role_policy_attachment" "lambda_mailer_vpc" {
+  role       = aws_iam_role.lambda_mailer.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+}
+
 resource "aws_cloudwatch_log_group" "lambda_mailer" {
   name              = "/aws/lambda/${aws_lambda_function.mailer.function_name}"
-  retention_in_days = 7
+  retention_in_days = 14
 }
+
