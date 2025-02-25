@@ -49,18 +49,6 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
       {
         Effect = "Allow"
         Action = [
-          "dynamodb:PutItem",
-          "dynamodb:GetItem",
-          "dynamodb:Query",
-          "dynamodb:BatchWriteItem"
-        ]
-        Resource = [
-          aws_dynamodb_table.newsletter_metadata.arn
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
           "ssm:GetParameters",
           "ssm:GetParameter"
         ]

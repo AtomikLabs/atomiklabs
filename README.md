@@ -24,7 +24,6 @@ None of this would be possible without [arXiv](https://arxiv.org/). It's easy to
   - Lambda
   - ECR
   - EC2
-  - DynamoDB
   - s3
   - Polly
   - EventBridge

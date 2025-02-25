@@ -26,13 +26,6 @@ resource "aws_ssm_parameter" "s3_bucket" {
   tags  = local.common_tags
 }
 
-resource "aws_ssm_parameter" "dynamodb_table" {
-  name  = "/${var.project}/${var.environment}/arxiv/dynamodb_table"
-  type  = "String"
-  value = aws_dynamodb_table.newsletter_metadata.id
-  tags  = local.common_tags
-}
-
 resource "aws_ssm_parameter" "email_recipients" {
   name  = "/${var.project}/${var.environment}/arxiv/email/recipients"
   type  = "String"
