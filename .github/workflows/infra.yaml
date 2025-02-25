@@ -168,38 +168,32 @@ jobs:
           docker push ${{ env.ECR_REPO }}:arxiv
 
       - name: Test DB Init
-        working-directory: ./services/db_init
         run: |
-          if [ -d "../shared" ]; then
-            cd ../shared && pip install -e . && cd ../db_init
-          else
-            echo "Shared directory not found, skipping shared package install"
-          fi
-          pip install -r requirements.txt || echo "Unable to install dependencies, may need to update requirements"
-          # Only run tests if pytest is available
-          if command -v pytest &> /dev/null; then
-            pytest || echo "Some tests may be failing, continuing build process"
-          else
-            echo "Pytest not available, skipping tests"
-          fi
+          echo "Using data_layer for database initialization..."
+          cd ./services/data_layer
+          pip install -e .
+          echo "Database initialization package installed successfully."
 
       - name: Build and push DB Init
         run: |
-          if [ -d "./services/db_init" ]; then
-            echo "Building DB Init image for repository: ${{ env.ECR_REPO }}"
-            cd ./services/db_init
-            # Check if we need the ECR_REPO build arg
-            if grep -q "ARG ECR_REPO" Dockerfile; then
-              docker build \
-                --build-arg ECR_REPO=${{ env.ECR_REPO }} \
-                -t ${{ env.ECR_REPO }}:db-init .
-            else
-              docker build -t ${{ env.ECR_REPO }}:db-init .
-            fi
-            docker push ${{ env.ECR_REPO }}:db-init
-          else
-            echo "DB Init directory not found, skipping"
+          echo "Building Data Layer image for repository: ${{ env.ECR_REPO }}"
+          cd ./services/data_layer
+          # Create a temporary Dockerfile if it doesn't exist
+          if [ ! -f "Dockerfile" ]; then
+            echo "Creating Dockerfile for data_layer..."
+            echo 'FROM python:3.11-slim' > Dockerfile
+            echo '' >> Dockerfile
+            echo 'WORKDIR /app' >> Dockerfile
+            echo '' >> Dockerfile
+            echo 'COPY . /app/' >> Dockerfile
+            echo '' >> Dockerfile
+            echo 'RUN pip install -e .' >> Dockerfile
+            echo '' >> Dockerfile
+            echo 'ENTRYPOINT ["init-db"]' >> Dockerfile
           fi
+          
+          docker build -t ${{ env.ECR_REPO }}:db-init .
+          docker push ${{ env.ECR_REPO }}:db-init
 
   run-db-init:
     needs: build-and-push
@@ -235,19 +229,36 @@ jobs:
           if TASK_DEF=$(terraform output -raw db_init_task_definition 2>/dev/null); then
             echo "Found task definition: $TASK_DEF"
             echo "DB_INIT_TASK=$TASK_DEF" >> "$GITHUB_ENV"
-            
-            # Run the task using the AWS CLI since we already have the task definition
-            echo "Running DB Init task..."
-            AWS_CLUSTER="${{ vars.AWS_ECS_CLUSTER }}"
-            
-            aws ecs run-task \
-              --cluster "$AWS_CLUSTER" \
-              --task-definition "$TASK_DEF" \
-              --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=[$(aws ec2 describe-subnets --query 'Subnets[0].SubnetId' --output text)],securityGroups=[$(aws ec2 describe-security-groups --query 'SecurityGroups[0].GroupId' --output text)],assignPublicIp=ENABLED}" \
-              --count 1
-              
-            echo "DB Init task started"
           else
-            echo "DB Init task definition not found, skipping task execution"
+            echo "Task definition output not found, using data_layer container directly"
+            REPO_URL=$(terraform output -raw ecr_repository_url)
+            
+            # Get the security group and subnet IDs
+            SECURITY_GROUP=$(aws ec2 describe-security-groups --query 'SecurityGroups[0].GroupId' --output text)
+            SUBNET=$(aws ec2 describe-subnets --query 'Subnets[0].SubnetId' --output text)
+            
+            # Run the db-init container directly
+            aws ecs run-task \
+              --cluster "${{ vars.AWS_ECS_CLUSTER }}" \
+              --task-definition atomiklabs-task-definition \
+              --launch-type FARGATE \
+              --network-configuration "awsvpcConfiguration={subnets=[$SUBNET],securityGroups=[$SECURITY_GROUP],assignPublicIp=ENABLED}" \
+              --overrides "{\"containerOverrides\": [{\"name\": \"atomiklabs-container\", \"image\": \"$REPO_URL:db-init\"}]}" \
+              --count 1
+            
+            echo "DB Init task started directly"
+            exit 0
           fi
+          
+          # Run the task using the AWS CLI since we already have the task definition
+          echo "Running DB Init task..."
+          AWS_CLUSTER="${{ vars.AWS_ECS_CLUSTER }}"
+          
+          aws ecs run-task \
+            --cluster "$AWS_CLUSTER" \
+            --task-definition "$TASK_DEF" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$(aws ec2 describe-subnets --query 'Subnets[0].SubnetId' --output text)],securityGroups=[$(aws ec2 describe-security-groups --query 'SecurityGroups[0].GroupId' --output text)],assignPublicIp=ENABLED}" \
+            --count 1
+            
+          echo "DB Init task started"
