@@ -76,7 +76,7 @@ resource "aws_db_subnet_group" "postgres" {
 resource "aws_db_instance" "postgres" {
   identifier             = "${local.resource_prefix}-postgres-${local.resource_suffix}"
   engine                 = "postgres"
-  engine_version         = "14.6"
+  engine_version         = "17.3"
   instance_class         = "db.t3.micro"
   allocated_storage      = 20
   storage_type           = "gp2"
@@ -84,7 +84,7 @@ resource "aws_db_instance" "postgres" {
   username               = local.db_username
   password               = random_password.db_password.result
   port                   = 5432
-  parameter_group_name   = "default.postgres14"
+  parameter_group_name   = "default.postgres17"
   publicly_accessible    = false
   skip_final_snapshot    = true
   vpc_security_group_ids = [aws_security_group.rds.id]
