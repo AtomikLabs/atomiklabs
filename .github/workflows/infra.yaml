@@ -225,40 +225,35 @@ jobs:
       - name: Get and Run Task Definition
         working-directory: ./infra
         run: |
-          # Try to get the task definition output
-          if TASK_DEF=$(terraform output -raw db_init_task_definition 2>/dev/null); then
+          # Get the ECR repository URL 
+          REPO_URL=$(terraform output -raw ecr_repository_url)
+          
+          # Get the security group and subnet IDs
+          SECURITY_GROUP=$(aws ec2 describe-security-groups --query 'SecurityGroups[0].GroupId' --output text)
+          SUBNET=$(aws ec2 describe-subnets --query 'Subnets[0].SubnetId' --output text)
+          
+          # Find an existing ECS task definition to use
+          echo "Looking for an existing ECS task definition..."
+          TASK_DEF=$(aws ecs list-task-definitions --query 'taskDefinitionArns[0]' --output text)
+          
+          if [ "$TASK_DEF" != "None" ]; then
             echo "Found task definition: $TASK_DEF"
-            echo "DB_INIT_TASK=$TASK_DEF" >> "$GITHUB_ENV"
-          else
-            echo "Task definition output not found, using data_layer container directly"
-            REPO_URL=$(terraform output -raw ecr_repository_url)
             
-            # Get the security group and subnet IDs
-            SECURITY_GROUP=$(aws ec2 describe-security-groups --query 'SecurityGroups[0].GroupId' --output text)
-            SUBNET=$(aws ec2 describe-subnets --query 'Subnets[0].SubnetId' --output text)
+            # Get the container name from the task definition
+            CONTAINER_NAME=$(aws ecs describe-task-definition --task-definition $TASK_DEF --query 'taskDefinition.containerDefinitions[0].name' --output text)
             
-            # Run the db-init container directly
+            # Run the task 
+            echo "Running DB Init task with container overrides..."
             aws ecs run-task \
               --cluster "${{ vars.AWS_ECS_CLUSTER }}" \
-              --task-definition atomiklabs-task-definition \
+              --task-definition $TASK_DEF \
               --launch-type FARGATE \
               --network-configuration "awsvpcConfiguration={subnets=[$SUBNET],securityGroups=[$SECURITY_GROUP],assignPublicIp=ENABLED}" \
-              --overrides "{\"containerOverrides\": [{\"name\": \"atomiklabs-container\", \"image\": \"$REPO_URL:db-init\"}]}" \
+              --overrides "{\"containerOverrides\": [{\"name\": \"$CONTAINER_NAME\", \"command\": [\"python\", \"-m\", \"services.data_layer.src.init_db\"]}]}" \
               --count 1
             
-            echo "DB Init task started directly"
-            exit 0
+            echo "DB Init task started"
+          else
+            echo "No task definitions found. Please create a task definition first."
+            exit 1
           fi
-          
-          # Run the task using the AWS CLI since we already have the task definition
-          echo "Running DB Init task..."
-          AWS_CLUSTER="${{ vars.AWS_ECS_CLUSTER }}"
-          
-          aws ecs run-task \
-            --cluster "$AWS_CLUSTER" \
-            --task-definition "$TASK_DEF" \
-            --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[$(aws ec2 describe-subnets --query 'Subnets[0].SubnetId' --output text)],securityGroups=[$(aws ec2 describe-security-groups --query 'SecurityGroups[0].GroupId' --output text)],assignPublicIp=ENABLED}" \
-            --count 1
-            
-          echo "DB Init task started"
