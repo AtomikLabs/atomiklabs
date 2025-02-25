@@ -26,5 +26,8 @@ COPY services/arxiv_processor/ /app/services/arxiv_processor/
 # Install dependencies
 RUN poetry install --no-interaction --no-ansi --no-dev
 
+# Install the data_layer package explicitly
+RUN pip install -e /app/services/data_layer/
+
 # Command to run the processor
 CMD ["python", "-m", "services.arxiv_processor.src.processor"] 
