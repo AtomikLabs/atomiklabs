@@ -160,8 +160,10 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "Building ArXiv processor image for repository: ${{ env.ECR_REPO }}"
+          cd ../../
           docker build \
             --build-arg ECR_REPO=${{ env.ECR_REPO }} \
+            -f services/arxiv_processor/Dockerfile \
             -t ${{ env.ECR_REPO }}:arxiv .
           docker push ${{ env.ECR_REPO }}:arxiv
 
