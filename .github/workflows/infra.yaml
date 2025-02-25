@@ -232,28 +232,35 @@ jobs:
           SECURITY_GROUP=$(aws ec2 describe-security-groups --query 'SecurityGroups[0].GroupId' --output text)
           SUBNET=$(aws ec2 describe-subnets --query 'Subnets[0].SubnetId' --output text)
           
-          # Find an existing ECS task definition to use
-          echo "Looking for an existing ECS task definition..."
-          TASK_DEF=$(aws ecs list-task-definitions --query 'taskDefinitionArns[0]' --output text)
+          # Find the ECS cluster - we should have one from Terraform
+          echo "Looking for the ECS cluster..."
+          CLUSTER_ARN=$(aws ecs list-clusters --query 'clusterArns[0]' --output text)
           
-          if [ "$TASK_DEF" != "None" ]; then
-            echo "Found task definition: $TASK_DEF"
-            
-            # Get the container name from the task definition
-            CONTAINER_NAME=$(aws ecs describe-task-definition --task-definition $TASK_DEF --query 'taskDefinition.containerDefinitions[0].name' --output text)
-            
-            # Run the task 
-            echo "Running DB Init task with container overrides..."
-            aws ecs run-task \
-              --cluster "${{ vars.AWS_ECS_CLUSTER }}" \
-              --task-definition $TASK_DEF \
-              --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=[$SUBNET],securityGroups=[$SECURITY_GROUP],assignPublicIp=ENABLED}" \
-              --overrides "{\"containerOverrides\": [{\"name\": \"$CONTAINER_NAME\", \"command\": [\"python\", \"-m\", \"services.data_layer.src.init_db\"]}]}" \
-              --count 1
-            
-            echo "DB Init task started"
-          else
-            echo "No task definitions found. Please create a task definition first."
+          if [ "$CLUSTER_ARN" == "None" ]; then
+            echo "FATAL ERROR: No ECS clusters found. Terraform should have created one!"
+            echo "Check your Terraform configuration and state."
             exit 1
+          else
+            echo "Found cluster: $CLUSTER_ARN"
+            # Extract just the cluster name from ARN
+            CLUSTER_NAME=$(echo $CLUSTER_ARN | awk -F'/' '{print $2}')
+            echo "Using cluster: $CLUSTER_NAME"
           fi
+          
+          # Create a simple task definition JSON for our DB Init container
+          echo '{"family":"db-init-task","networkMode":"awsvpc","executionRoleArn":"'"$(aws iam list-roles --query 'Roles[?contains(RoleName, `ECS`)].Arn | [0]' --output text)"'","containerDefinitions":[{"name":"db-init","image":"'"$REPO_URL:db-init"'","essential":true}],"requiresCompatibilities":["FARGATE"],"cpu":"256","memory":"512"}' > db-init-task.json
+          
+          # Register the task definition
+          TASK_DEF=$(aws ecs register-task-definition --cli-input-json file://db-init-task.json --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Created task definition: $TASK_DEF"
+          
+          # Run the DB init task
+          echo "Running DB Init task..."
+          aws ecs run-task \
+            --cluster "$CLUSTER_NAME" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNET],securityGroups=[$SECURITY_GROUP],assignPublicIp=ENABLED}" \
+            --task-definition $TASK_DEF \
+            --count 1
+            
+          echo "DB Init task started"
