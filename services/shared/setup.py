@@ -5,7 +5,7 @@ setup(
     version="0.1.0",
     packages=find_packages(),
     install_requires=[
-        "sqlite3-utils>=3.35.0"
+        "psycopg2-binary>=2.9.9"
     ],
     python_requires=">=3.11",
 )
