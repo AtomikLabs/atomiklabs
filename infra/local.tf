@@ -9,7 +9,6 @@ provider "aws" {
   # LocalStack endpoint configuration
   endpoints {
     s3         = "http://localhost:4566"
-    efs        = "http://localhost:4566"
     ssm        = "http://localhost:4566"
     ses        = "http://localhost:4566"
     lambda     = "http://localhost:4566"

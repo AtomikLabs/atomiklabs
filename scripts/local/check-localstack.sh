@@ -36,7 +36,7 @@ main() {
     local failed=0
     
     # Check each required service
-    services=("s3" "efs" "ssm" "ses" "lambda" "logs" "iam")
+    services=("s3" "ssm" "ses" "lambda" "logs" "iam")
     for service in "${services[@]}"; do
         check_service "$service" || ((failed++))
     done

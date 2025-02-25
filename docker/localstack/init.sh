@@ -84,10 +84,4 @@ awslocal iam create-role \
     }]
   }'
 
-# Create EFS file system (simulated in LocalStack)
-echo "Setting up EFS..."
-awslocal efs create-file-system \
-  --creation-token arxiv-efs \
-  --tags Key=Name,Value=sqlite-storage
-
 echo "LocalStack initialization complete!"

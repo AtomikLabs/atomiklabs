@@ -4,6 +4,7 @@ services:
   localstack:
     environment:
       - SERVICES=s3,ssm,ses,lambda,logs,iam
+      - DEFAULT_REGION=us-west-2
       - DOCKER_HOST=unix:///var/run/docker.sock
       - DATA_DIR=/tmp/localstack/test/data
       - DEBUG=1
