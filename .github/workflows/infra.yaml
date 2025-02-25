@@ -32,7 +32,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         
-      - name: Package Lambda
+      - name: Package Lambda and Layer
         run: |
           echo "Creating build directory..."
           mkdir -p build
@@ -41,17 +41,16 @@ jobs:
           echo "Packaging Lambda code..."
           cd ../services/arxiv_mailer/src
           zip -r ../../../infra/build/mailer.zip ./*
-          
-          echo "Verifying zip contents..."
           cd ../../../infra
-          unzip -l build/mailer.zip
+          
+          echo "Packaging shared layer..."
+          cd ../services/shared
+          ./package_layer.sh
+          mv layer.zip ../../infra/build/shared_layer.zip
+          cd ../../infra
           
           echo "Build directory contents:"
           ls -la build/
-          
-          echo "Calculating source_code_hash..."
-          sha256sum build/mailer.zip
-          base64 -w0 build/mailer.zip | sha256sum
 
       - name: Terraform Init
         run: |
@@ -66,8 +65,6 @@ jobs:
           TF_VAR_region: ${{ vars.AWS_REGION }}
           TF_VAR_resource_uuid: ${{ vars.AWS_RESOURCE_UUID }}
           TF_VAR_email_config: ${{ vars.AWS_EMAIL_CONFIG }}
-          TF_VAR_nvd_api_key: ${{ secrets.NVD_API_KEY }}
-          TF_VAR_monitored_systems: ${{ vars.MONITORED_SYSTEMS }}
           TF_LOG: DEBUG
         run: |
           echo "Current directory contents:"
@@ -82,8 +79,6 @@ jobs:
           TF_VAR_region: ${{ vars.AWS_REGION }}
           TF_VAR_resource_uuid: ${{ vars.AWS_RESOURCE_UUID }}
           TF_VAR_email_config: ${{ vars.AWS_EMAIL_CONFIG }}
-          TF_VAR_nvd_api_key: ${{ secrets.NVD_API_KEY }}
-          TF_VAR_monitored_systems: ${{ vars.MONITORED_SYSTEMS }}
         run: |
           terraform apply -auto-approve tfplan
           
@@ -131,20 +126,77 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Build and push shared base
+        working-directory: ./services/shared
+        run: |
+          echo "Building shared base image for repository: ${{ env.ECR_REPO }}"
+          docker build -t ${{ env.ECR_REPO }}:base .
+          docker push ${{ env.ECR_REPO }}:base
+
       - name: Build and push ArXiv processor
         working-directory: ./services/arxiv_processor
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "Building ArXiv processor image for repository: ${{ env.ECR_REPO }}"
-          docker build -t ${{ env.ECR_REPO }}:arxiv .
+          docker build \
+            --build-arg ECR_REPO=${{ env.ECR_REPO }} \
+            -t ${{ env.ECR_REPO }}:arxiv .
           docker push ${{ env.ECR_REPO }}:arxiv
 
-      - name: Build and push NVD checker
-        working-directory: ./services/nvd_checker
-        env:
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Test DB Init
+        working-directory: ./services/db_init
         run: |
-          echo "Building NVD checker image for repository: ${{ env.ECR_REPO }}"
-          docker build -t ${{ env.ECR_REPO }}:nvd .
-          docker push ${{ env.ECR_REPO }}:nvd
+          cd ../shared && pip install -e . && cd ../db_init
+          pip install -r requirements.txt
+          pytest
+
+      - name: Build and push DB Init
+        working-directory: ./services/db_init
+        run: |
+          echo "Building DB Init image for repository: ${{ env.ECR_REPO }}"
+          docker build \
+            --build-arg ECR_REPO=${{ env.ECR_REPO }} \
+            -t ${{ env.ECR_REPO }}:db-init .
+          docker push ${{ env.ECR_REPO }}:db-init
+
+  run-db-init:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: dev
+    
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4.1.0
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_CD_ROLE }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        
+      - name: Terraform Init
+        working-directory: ./infra
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.AWS_CORE_STATE_S3 }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="dynamodb_table=terraform-state-lock"
+
+      - name: Get Task Definition
+        working-directory: ./infra
+        run: |
+          TASK_DEF=$(terraform output -raw db_init_task_definition)
+          echo "DB_INIT_TASK=$TASK_DEF" >> "$GITHUB_ENV"
+
+      - name: Run DB Init Task
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ env.DB_INIT_TASK }}
+          cluster: ${{ vars.AWS_ECS_CLUSTER }}
+          run-task: true
+          wait-for-task-stopped: true

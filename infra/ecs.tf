@@ -134,33 +134,4 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
       }
     }
   ])
-}
-
-resource "aws_ecs_task_definition" "nvd_checker" {
-  family                   = "${local.resource_prefix}-nvd-checker-${local.resource_suffix}"
-  requires_compatibilities = ["FARGATE"]
-  network_mode            = "awsvpc"
-  cpu                     = 512
-  memory                  = 1024
-  task_role_arn           = aws_iam_role.ecs_task_role.arn
-  execution_role_arn      = aws_iam_role.ecs_execution_role.arn
-
-  container_definitions = jsonencode([
-    {
-      name  = "nvd-checker"
-      image = "${aws_ecr_repository.daily_processor.repository_url}:nvd"
-      environment = [
-        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" },
-        { name = "DB_CREDENTIALS_SECRET", value = aws_secretsmanager_secret.db_credentials.name }
-      ]
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = "/ecs/${local.resource_prefix}-nvd-checker-${local.resource_suffix}"
-          awslogs-region        = var.region
-          awslogs-stream-prefix = "ecs"
-        }
-      }
-    }
-  ])
 } 

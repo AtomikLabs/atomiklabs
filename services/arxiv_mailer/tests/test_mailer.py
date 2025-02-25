@@ -306,11 +306,6 @@ def test_lambda_handler():
                 {'Key': 'newsletters/2023-01-14/LG_research_summary.docx'},
                 {'Key': 'newsletters/2023-01-14/AI_research_summary.docx'}
             ]
-        },
-        'reports/daily/2023-01-16/': {
-            'Contents': [
-                {'Key': 'reports/daily/2023-01-16/nvd_report.docx'}
-            ]
         }
     })
     
@@ -429,11 +424,6 @@ def test_lambda_handler_with_multiple_newsletters():
             'Contents': [
                 {'Key': 'newsletters/2023-01-14/LG_research_summary.docx'},
                 {'Key': 'newsletters/2023-01-14/AI_research_summary.docx'}
-            ]
-        },
-        'reports/daily/2023-01-16/': {
-            'Contents': [
-                {'Key': 'reports/daily/2023-01-16/nvd_report.docx'}
             ]
         }
     })

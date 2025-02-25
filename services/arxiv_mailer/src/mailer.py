@@ -208,9 +208,8 @@ def lambda_handler(event, context):
         arxiv_date = (today - timedelta(days=config['back_date'])).strftime("%Y-%m-%d")  # Use back_date from SSM
         arxiv_date_obj = datetime.strptime(arxiv_date, "%Y-%m-%d").date()
         
-        today_str = today.strftime("%Y-%m-%d")  # NVD reports from today
+        today_str = today.strftime("%Y-%m-%d")
         logger.info(f"Looking for ArXiv summaries from: {arxiv_date}")
-        logger.info(f"Looking for NVD reports from: {today_str}")
         
         # Initialize DB connection
         init_db()
@@ -238,17 +237,11 @@ def lambda_handler(event, context):
                     # Mark this file as linked to a newsletter
                     s3_key_to_file[newsletter.s3_path]['newsletter_id'] = newsletter.id
         
-        # Get NVD report (from today for immediate vulnerability reporting)
-        nvd_path = f"reports/daily/{today_str}/"
-        logger.info(f"NVD path: {nvd_path}")
-        nvd_files = get_s3_files(s3_client, config['s3_bucket'], nvd_path)
-        logger.info(f"Found {len(nvd_files)} nvd files: {[f['filename'] for f in nvd_files]}")
-        
-        all_files = arxiv_files + nvd_files
+        all_files = arxiv_files
         logger.info(f"Total files to send: {len(all_files)}")
         
         if not all_files:
-            logger.warning(f"No reports found for arxiv({arxiv_date}) or nvd({today_str})")
+            logger.warning(f"No ArXiv summaries found for {arxiv_date}")
             return {
                 'statusCode': 200,
                 'body': 'No reports to send'
@@ -264,9 +257,6 @@ def lambda_handler(event, context):
                 body += f"Attached are your arXiv research summaries ({titles_text}) from {arxiv_date}.\n"
             else:
                 body += f"Attached are your arXiv research summaries from {arxiv_date}.\n"
-        
-        if nvd_files:
-            body += "Attached is today's NVD vulnerability report.\n"
             
         body += "\nBest regards,\nAtomikLabs Daily Summary"
         
