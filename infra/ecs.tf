@@ -90,11 +90,6 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-resource "aws_ecr_repository" "daily_processor" {
-  name = "${local.resource_prefix}-daily-processor-${local.resource_suffix}"
-  force_delete = true
-}
-
 resource "aws_ecs_task_definition" "arxiv_processor" {
   family                   = "${local.resource_prefix}-arxiv-processor-${local.resource_suffix}"
   requires_compatibilities = ["FARGATE"]

@@ -11,8 +11,106 @@ permissions:
       contents: read
 
 jobs:
-  # First phase: Create infrastructure (ECR repository, Lambda functions with dummy image)
+  # Phase 1: Create just the ECR repository
+  create-ecr:
+    runs-on: ubuntu-latest
+    environment: dev
+    defaults:
+      run:
+        working-directory: ./infra
+    
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4.1.0
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_CD_ROLE }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.AWS_CORE_STATE_S3 }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="dynamodb_table=terraform-state-lock"
+
+      - name: Create ECR Repository Only
+        env:
+          TF_VAR_environment: ${{ vars.ENVIRONMENT }}
+          TF_VAR_region: ${{ vars.AWS_REGION }}
+          TF_VAR_resource_uuid: ${{ vars.AWS_RESOURCE_UUID }}
+          TF_VAR_email_config: ${{ vars.AWS_EMAIL_CONFIG }}
+        run: |
+          # Apply only the ECR repository
+          terraform apply -auto-approve -target=aws_ecr_repository.daily_processor
+          
+          # Output the ECR repository URL
+          echo "ECR_REPO=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_ENV"
+  
+  # Phase 2: Push placeholder image to ECR
+  push-placeholder:
+    needs: create-ecr
+    runs-on: ubuntu-latest
+    environment: dev
+    
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4.1.0
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_CD_ROLE }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        
+      - name: Terraform Init
+        working-directory: ./infra
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.AWS_CORE_STATE_S3 }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="dynamodb_table=terraform-state-lock"
+
+      - name: Get ECR repository URL
+        working-directory: ./infra
+        run: |
+          echo "Getting ECR repository URL..."
+          REPO_URL=$(terraform output -raw ecr_repository_url)
+          echo "ECR_REPO=$REPO_URL" >> "$GITHUB_ENV"
+          echo "Stored repository URL in environment variable: $REPO_URL"
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push placeholder image
+        run: |
+          echo "Creating and pushing placeholder image to: ${{ env.ECR_REPO }}"
+          
+          # Create a minimal Dockerfile for placeholder
+          cat > Dockerfile.placeholder << 'EOF'
+          FROM public.ecr.aws/lambda/python:3.11
+          CMD ["echo", "This is a placeholder image"]
+          EOF
+          
+          # Build and push the placeholder image
+          docker build -t ${{ env.ECR_REPO }}:mailer -f Dockerfile.placeholder .
+          docker push ${{ env.ECR_REPO }}:mailer
+          
+          echo "Placeholder image pushed successfully"
+
+  # Phase 3: Create the rest of the infrastructure
   terraform-init:
+    needs: push-placeholder
     runs-on: ubuntu-latest
     environment: dev
     defaults:
@@ -139,6 +237,7 @@ jobs:
             --query 'Configuration.[FunctionName,LastModified,CodeSize]' \
             --output table
 
+  # Rest of the jobs remain the same
   build-and-push:
     needs: terraform-init
     runs-on: ubuntu-latest

@@ -4,7 +4,7 @@ output "ecr_repository_url" {
 }
 
 output "lambda_function_name" {
-  description = "Name of the mailer Lambda function"
+  description = "Name of the Lambda function"
   value       = aws_lambda_function.mailer.function_name
 }
 
