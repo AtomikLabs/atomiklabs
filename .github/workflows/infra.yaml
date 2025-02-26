@@ -45,20 +45,23 @@ jobs:
           
           # Package data_layer as a Lambda layer
           echo "Packaging data_layer as a Lambda layer..."
-          mkdir -p temp_layer/python
-          cd ../services/data_layer
+          mkdir -p temp_layer/python/atomiklabs_data
           
-          # Create a proper package structure
-          mkdir -p ../../../infra/temp_layer/python/atomiklabs_data
-          cp -r src/atomiklabs_data/* ../../../infra/temp_layer/python/atomiklabs_data/
+          # Copy the data_layer package files
+          echo "Copying data_layer files..."
+          cp -r ../services/data_layer/src/atomiklabs_data/* temp_layer/python/atomiklabs_data/
           
           # Create an __init__.py file if it doesn't exist
-          touch ../../../infra/temp_layer/python/atomiklabs_data/__init__.py
+          touch temp_layer/python/atomiklabs_data/__init__.py
           
           # Create the layer zip
-          cd ../../../infra/temp_layer
+          echo "Creating data_layer.zip..."
+          cd temp_layer
           zip -r ../build/data_layer.zip python/
           cd ..
+          ls -la build/
+          
+          # Clean up
           rm -rf temp_layer
           
           # Check if shared directory exists
