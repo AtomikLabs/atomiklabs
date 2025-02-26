@@ -11,7 +11,8 @@ permissions:
       contents: read
 
 jobs:
-  terraform:
+  # First phase: Create infrastructure (ECR repository, Lambda functions with dummy image)
+  terraform-init:
     runs-on: ubuntu-latest
     environment: dev
     defaults:
@@ -139,7 +140,7 @@ jobs:
             --output table
 
   build-and-push:
-    needs: terraform
+    needs: terraform-init
     runs-on: ubuntu-latest
     environment: dev
     
@@ -307,3 +308,45 @@ jobs:
             --count 1
             
           echo "DB initialization task started"
+
+  # Final phase: Update Lambda function with correct image
+  update-lambda:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: dev
+    
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4.1.0
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_CD_ROLE }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        
+      - name: Terraform Init
+        working-directory: ./infra
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.AWS_CORE_STATE_S3 }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="dynamodb_table=terraform-state-lock"
+
+      - name: Get ECR repository URL and Update Lambda
+        working-directory: ./infra
+        run: |
+          echo "Getting ECR repository URL..."
+          ECR_REPO=$(terraform output -raw ecr_repository_url)
+          LAMBDA_NAME="atomiklabs-${{ vars.ENVIRONMENT }}-mailer-${{ vars.AWS_RESOURCE_UUID }}"
+          
+          echo "Updating Lambda function with image: ${ECR_REPO}:mailer"
+          aws lambda update-function-code \
+            --function-name "$LAMBDA_NAME" \
+            --image-uri "${ECR_REPO}:mailer"
+
+          echo "Lambda function updated successfully"

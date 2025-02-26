@@ -37,6 +37,15 @@ resource "aws_lambda_function" "mailer" {
   }
 
   tags = local.common_tags
+  
+  # Lifecycle configuration to handle the initial deployment when the image doesn't exist yet
+  # This allows Terraform to create the Lambda function with a reference to a non-existent image initially
+  # Later deployments will update the image once it exists
+  lifecycle {
+    ignore_changes = [
+      image_uri
+    ]
+  }
 }
 
 resource "aws_iam_role" "lambda_mailer" {
