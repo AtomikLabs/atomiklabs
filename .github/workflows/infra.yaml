@@ -43,6 +43,24 @@ jobs:
           zip -r ../../../infra/build/mailer.zip ./*
           cd ../../../infra
           
+          # Package data_layer as a Lambda layer
+          echo "Packaging data_layer as a Lambda layer..."
+          mkdir -p temp_layer/python
+          cd ../services/data_layer
+          
+          # Create a proper package structure
+          mkdir -p ../../../infra/temp_layer/python/atomiklabs_data
+          cp -r src/atomiklabs_data/* ../../../infra/temp_layer/python/atomiklabs_data/
+          
+          # Create an __init__.py file if it doesn't exist
+          touch ../../../infra/temp_layer/python/atomiklabs_data/__init__.py
+          
+          # Create the layer zip
+          cd ../../../infra/temp_layer
+          zip -r ../build/data_layer.zip python/
+          cd ..
+          rm -rf temp_layer
+          
           # Check if shared directory exists
           if [ -d "../services/shared" ]; then
             echo "Packaging shared layer..."

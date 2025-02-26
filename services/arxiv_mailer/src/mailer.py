@@ -10,10 +10,29 @@ import boto3
 from botocore.exceptions import ClientError
 
 # Import data layer components
-from atomiklabs_data import (
-    init_db, get_session,
-    NewsletterRepository, EmailRepository
-)
+try:
+    # Try importing the data layer components
+    from atomiklabs_data import (
+        init_db, get_session,
+        NewsletterRepository, EmailRepository
+    )
+    print("Successfully imported atomiklabs_data")
+except ImportError as e:
+    print(f"Error importing atomiklabs_data: {e}")
+    # Try using sys.path as a fallback
+    import sys
+    data_layer_path = os.path.abspath("/opt/python")
+    print(f"Adding Lambda layer path to sys.path: {data_layer_path}")
+    sys.path.insert(0, data_layer_path)
+    try:
+        from atomiklabs_data import (
+            init_db, get_session,
+            NewsletterRepository, EmailRepository
+        )
+        print("Successfully imported atomiklabs_data after path adjustment")
+    except ImportError as e2:
+        print(f"Still unable to import atomiklabs_data: {e2}")
+        raise
 
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)

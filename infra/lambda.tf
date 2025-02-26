@@ -1,3 +1,12 @@
+# Create a Lambda layer for the data_layer package
+resource "aws_lambda_layer_version" "data_layer" {
+  filename   = "${path.module}/build/data_layer.zip"
+  layer_name = "${local.resource_prefix}-data-layer-${local.resource_suffix}"
+
+  compatible_runtimes = ["python3.11"]
+  source_code_hash    = filebase64sha256("${path.module}/build/data_layer.zip")
+}
+
 resource "aws_lambda_function" "mailer" {
   filename         = "${path.module}/build/mailer.zip"
   function_name    = "${local.resource_prefix}-mailer-${local.resource_suffix}"
@@ -7,6 +16,9 @@ resource "aws_lambda_function" "mailer" {
   runtime         = "python3.11"
   timeout         = 60
   memory_size     = 256
+  
+  # Add layers
+  layers = [aws_lambda_layer_version.data_layer.arn]
 
   # VPC configuration to allow RDS access
   vpc_config {
