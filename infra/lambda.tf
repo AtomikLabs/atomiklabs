@@ -19,8 +19,7 @@ resource "aws_lambda_function" "mailer" {
   
   # Add ECR permissions to Lambda IAM role
   depends_on = [
-    aws_ecr_repository.daily_processor,
-    aws_iam_role_policy_attachment.lambda_mailer_ecr_pull
+    aws_ecr_repository.daily_processor
   ]
   
   # VPC configuration to allow RDS access
@@ -127,17 +126,20 @@ resource "aws_iam_role_policy" "lambda_mailer_ecr" {
         Action = [
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage",
-          "ecr:BatchCheckLayerAvailability"
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetAuthorizationToken"
         ]
         Resource = [aws_ecr_repository.daily_processor.arn]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken"
+        ]
+        Resource = "*"
       }
     ]
   })
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_mailer_ecr_pull" {
-  role       = aws_iam_role.lambda_mailer.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonECR-ReadOnly"
 }
 
 resource "aws_cloudwatch_log_group" "lambda_mailer" {
