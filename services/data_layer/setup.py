@@ -3,7 +3,8 @@ from setuptools import setup, find_packages
 setup(
     name="atomiklabs_data",
     version="0.1.0",
-    packages=find_packages(),
+    package_dir={"": "src"},
+    packages=["atomiklabs_data"],
     install_requires=[
         "sqlalchemy>=2.0.0",
         "psycopg2-binary>=2.9.5",
@@ -12,8 +13,8 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "init-db=src.init_db:main",
-            "db-migrate=src.migration:main",
+            "init-db=atomiklabs_data.init_db:main",
+            "db-migrate=atomiklabs_data.migration:main",
         ],
     },
     python_requires=">=3.8",

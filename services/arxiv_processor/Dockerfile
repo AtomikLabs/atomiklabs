@@ -17,8 +17,8 @@ WORKDIR /app
 # Copy the data layer package first
 COPY services/data_layer/ /app/services/data_layer/
 
-# Install data_layer package explicitly before Poetry runs
-RUN pip install -e /app/services/data_layer/
+# Install data_layer package explicitly using standard install rather than development mode
+RUN cd /app/services/data_layer && pip install .
 
 # Copy Poetry configuration
 COPY pyproject.toml poetry.lock* ./

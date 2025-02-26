@@ -15,11 +15,33 @@ from docx import Document
 from botocore.exceptions import ClientError
 
 # Import data layer components
-from atomiklabs_data import (
-    init_db, get_session, 
-    ArticleRepository, AuthorRepository, CategoryRepository, 
-    ProcessingEventRepository, NewsletterRepository
-)
+try:
+    # Try importing the data layer components
+    from atomiklabs_data import (
+        init_db, get_session, 
+        ArticleRepository, AuthorRepository, CategoryRepository, 
+        ProcessingEventRepository, NewsletterRepository
+    )
+    print("Successfully imported atomiklabs_data")
+except ImportError as e:
+    print(f"Error importing atomiklabs_data: {e}")
+    # Try using sys.path as a fallback
+    import sys
+    import os
+    data_layer_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../services/data_layer/src"))
+    if os.path.exists(data_layer_path):
+        print(f"Adding data_layer_path to sys.path: {data_layer_path}")
+        sys.path.insert(0, data_layer_path)
+        try:
+            from atomiklabs_data import (
+                init_db, get_session, 
+                ArticleRepository, AuthorRepository, CategoryRepository, 
+                ProcessingEventRepository, NewsletterRepository
+            )
+            print("Successfully imported atomiklabs_data after path adjustment")
+        except ImportError as e2:
+            print(f"Still unable to import atomiklabs_data: {e2}")
+            raise
 
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
