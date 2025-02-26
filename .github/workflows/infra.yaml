@@ -38,31 +38,53 @@ jobs:
           mkdir -p build
           chmod 777 build
           
-          echo "Packaging Lambda code..."
-          cd ../services/arxiv_mailer/src
-          zip -r ../../../infra/build/mailer.zip ./*
-          cd ../../../infra
+          # We'll use Docker container for Lambda instead of zip packaging
+          echo "Note: Lambda will be deployed as a container"
           
-          # Package data_layer as a Lambda layer
-          echo "Packaging data_layer as a Lambda layer..."
-          mkdir -p temp_layer/python/atomiklabs_data
+          # Still need to package the data layer for other usages
+          echo "Packaging data layer for Lambda layer..."
           
-          # Copy the data_layer package files
-          echo "Copying data_layer files..."
-          cp -r ../services/data_layer/src/atomiklabs_data/* temp_layer/python/atomiklabs_data/
+          # Create requirements file for the layer
+          cat > layer_requirements.txt << EOF
+          SQLAlchemy==2.0.0
+          psycopg2-binary==2.9.5
+          boto3==1.34.0
+          alembic==1.10.0
+          EOF
           
-          # Create an __init__.py file if it doesn't exist
-          touch temp_layer/python/atomiklabs_data/__init__.py
+          # Set up Python virtual environment for Layer
+          python -m venv layer_venv
+          source layer_venv/bin/activate
+          pip install --upgrade pip
+          pip install -r layer_requirements.txt
           
-          # Create the layer zip
-          echo "Creating data_layer.zip..."
-          cd temp_layer
+          # Install the data_layer package
+          pip install -e ../services/data_layer
+          
+          # Create Lambda layer directory structure
+          mkdir -p layer_build/python
+          
+          # Copy site-packages to layer
+          cp -r layer_venv/lib/python*/site-packages/* layer_build/python/
+          
+          # Remove unnecessary packages to reduce size
+          rm -rf layer_build/python/pip* layer_build/python/setuptools* layer_build/python/_distutils_hack layer_build/python/*.dist-info
+          
+          # Create atomiklabs_data package in the layer
+          mkdir -p layer_build/python/atomiklabs_data
+          cp -r ../services/data_layer/src/atomiklabs_data/* layer_build/python/atomiklabs_data/
+          touch layer_build/python/atomiklabs_data/__init__.py
+          
+          # Create layer zip
+          cd layer_build
           zip -r ../build/data_layer.zip python/
           cd ..
-          ls -la build/
           
           # Clean up
-          rm -rf temp_layer
+          rm -rf layer_venv layer_build layer_requirements.txt
+          
+          echo "Build directory contents:"
+          ls -la build/
           
           # Check if shared directory exists
           if [ -d "../services/shared" ]; then
@@ -79,9 +101,6 @@ jobs:
             cd ..
             rm -rf temp_layer
           fi
-          
-          echo "Build directory contents:"
-          ls -la build/
 
       - name: Terraform Init
         run: |
@@ -175,6 +194,19 @@ jobs:
             rm Dockerfile.base
           fi
 
+      - name: Build and push Lambda mailer container
+        run: |
+          echo "Building Lambda mailer container image for repository: ${{ env.ECR_REPO }}"
+          docker build \
+            -f services/arxiv_mailer/Dockerfile \
+            -t ${{ env.ECR_REPO }}:mailer .
+          docker push ${{ env.ECR_REPO }}:mailer
+          
+          # Get and store the image URI for use in Terraform
+          MAILER_IMAGE_URI="${{ env.ECR_REPO }}:mailer"
+          echo "MAILER_IMAGE_URI=$MAILER_IMAGE_URI" >> "$GITHUB_ENV"
+          echo "Lambda mailer image URI: $MAILER_IMAGE_URI"
+
       - name: Build and push ArXiv processor
         working-directory: ./services/arxiv_processor
         env:
@@ -199,20 +231,39 @@ jobs:
         run: |
           echo "Building Data Layer image for repository: ${{ env.ECR_REPO }}"
           cd ./services/data_layer
-          # Create a temporary Dockerfile if it doesn't exist
-          if [ ! -f "Dockerfile" ]; then
-            echo "Creating Dockerfile for data_layer..."
-            echo 'FROM python:3.11-slim' > Dockerfile
-            echo '' >> Dockerfile
-            echo 'WORKDIR /app' >> Dockerfile
-            echo '' >> Dockerfile
-            echo 'COPY . /app/' >> Dockerfile
-            echo '' >> Dockerfile
-            echo 'RUN pip install -e .' >> Dockerfile
-            echo '' >> Dockerfile
-            echo 'ENTRYPOINT ["init-db"]' >> Dockerfile
-          fi
           
+          # Create a more robust Dockerfile
+          cat > Dockerfile << 'EOF'
+          FROM python:3.11-slim
+
+          # Install system dependencies
+          RUN apt-get update && apt-get install -y \
+              build-essential \
+              && rm -rf /var/lib/apt/lists/*
+
+          WORKDIR /app
+
+          # Copy the data layer package
+          COPY . /app/
+
+          # Install the package properly
+          RUN pip install --no-cache-dir -e .
+
+          # Verify package installation
+          RUN python -c "import atomiklabs_data; print('Successfully imported atomiklabs_data')"
+
+          # Set environment variables
+          ENV PYTHONUNBUFFERED=1
+
+          # Health check to verify proper installation
+          HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+              CMD python -c "import atomiklabs_data; print('Container healthy')" || exit 1
+
+          # Entry point to initialize the database
+          ENTRYPOINT ["init-db"]
+          EOF
+          
+          # Build and push the image
           docker build -t ${{ env.ECR_REPO }}:db-init .
           docker push ${{ env.ECR_REPO }}:db-init
 

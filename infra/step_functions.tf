@@ -59,7 +59,8 @@ resource "aws_iam_role_policy" "step_functions" {
           "lambda:InvokeFunction"
         ]
         Resource = [
-          aws_lambda_function.mailer.arn
+          aws_lambda_function.mailer.arn,
+          "${aws_lambda_function.mailer.arn}:*"  # Allow invoking versions/aliases
         ]
       }
     ]
