@@ -5,7 +5,7 @@ resource "aws_lambda_function" "mailer" {
   handler         = "mailer.lambda_handler"
   source_code_hash = filebase64sha256("${path.module}/build/mailer.zip")
   runtime         = "python3.11"
-  timeout         = 60
+  timeout         = 180
   memory_size     = 256
 
   # Configure VPC for RDS access
