@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
     name="atomiklabs_data",
@@ -20,4 +20,4 @@ setup(
     python_requires=">=3.8",
     description="Data access layer for AtomikLabs research data system",
     author="AtomikLabs",
-) 
+)

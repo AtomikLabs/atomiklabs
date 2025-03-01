@@ -11,27 +11,24 @@ import logging
 import os
 import sys
 
-from .db import init_db, create_tables, get_session
+from .db import create_tables, get_session, init_db
 from .repository import CategoryRepository
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
 def setup_arxiv_categories(connection_string=None):
     """
     Initialize arXiv categories in the database.
-    
+
     Args:
         connection_string: Optional database connection string
     """
     if connection_string:
         init_db(connection_string)
-    
+
     # List of arXiv CS categories
     cs_categories = [
         {"code": "cs.AI", "name": "Artificial Intelligence"},
@@ -75,53 +72,46 @@ def setup_arxiv_categories(connection_string=None):
         {"code": "cs.SI", "name": "Social and Information Networks"},
         {"code": "cs.SY", "name": "Systems and Control"},
     ]
-    
+
     # Create the parent CS category
     with get_session() as session:
-        cs_parent = CategoryRepository.create_category(
-            session=session,
-            name="Computer Science",
-            code="cs"
-        )
-        
+        cs_parent = CategoryRepository.create_category(session=session, name="Computer Science", code="cs")
+
         # Add all CS subcategories
         for category in cs_categories:
             CategoryRepository.create_category(
-                session=session,
-                name=category["name"],
-                code=category["code"],
-                parent_id=cs_parent.id
+                session=session, name=category["name"], code=category["code"], parent_id=cs_parent.id
             )
-            
+
         logger.info(f"Added {len(cs_categories)} CS categories")
 
 
 def main():
     """Main function to initialize the database."""
-    parser = argparse.ArgumentParser(description='Initialize the database')
-    parser.add_argument('--connection-string', help='Database connection string')
+    parser = argparse.ArgumentParser(description="Initialize the database")
+    parser.add_argument("--connection-string", help="Database connection string")
     args = parser.parse_args()
-    
+
     connection_string = args.connection_string
-    
+
     # Initialize database connection
     if connection_string:
         init_db(connection_string)
     else:
         # Use environment variables
         init_db()
-    
+
     try:
         # Create all tables
         logger.info("Creating database tables...")
         create_tables()
         logger.info("Database tables created successfully")
-        
+
         # Set up initial data
         logger.info("Adding initial category data...")
         setup_arxiv_categories(connection_string)
         logger.info("Initial data setup complete")
-        
+
         return 0
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
@@ -129,4 +119,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main()) 
+    sys.exit(main())
