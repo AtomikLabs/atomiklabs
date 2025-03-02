@@ -98,6 +98,26 @@ resource "aws_sfn_state_machine" "daily_processor" {
                   {
                     Name = "CONFIG_PATH",
                     Value = "/${var.project}/${var.environment}"
+                  },
+                  {
+                    Name = "DB_HOST",
+                    Value = aws_db_instance.postgresql.address
+                  },
+                  {
+                    Name = "DB_PORT",
+                    Value = tostring(aws_db_instance.postgresql.port)
+                  },
+                  {
+                    Name = "DB_NAME",
+                    Value = aws_db_instance.postgresql.db_name
+                  },
+                  {
+                    Name = "DB_USER",
+                    Value = aws_db_instance.postgresql.username
+                  },
+                  {
+                    Name = "DB_PASSWORD_PARAM",
+                    Value = aws_ssm_parameter.db_password.name
                   }
                 ]
               }
@@ -128,6 +148,26 @@ resource "aws_sfn_state_machine" "daily_processor" {
                   {
                     Name = "CONFIG_PATH",
                     Value = "/${var.project}/${var.environment}"
+                  },
+                  {
+                    Name = "DB_HOST",
+                    Value = aws_db_instance.postgresql.address
+                  },
+                  {
+                    Name = "DB_PORT",
+                    Value = tostring(aws_db_instance.postgresql.port)
+                  },
+                  {
+                    Name = "DB_NAME",
+                    Value = aws_db_instance.postgresql.db_name
+                  },
+                  {
+                    Name = "DB_USER",
+                    Value = aws_db_instance.postgresql.username
+                  },
+                  {
+                    Name = "DB_PASSWORD_PARAM",
+                    Value = aws_ssm_parameter.db_password.name
                   }
                 ]
               }
