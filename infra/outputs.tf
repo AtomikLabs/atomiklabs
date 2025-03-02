@@ -8,22 +8,27 @@ output "lambda_function_name" {
   value       = aws_lambda_function.mailer.function_name
 }
 
-output "postgresql_endpoint" {
-  description = "The connection endpoint for the PostgreSQL RDS instance"
-  value       = aws_db_instance.postgresql.endpoint
+output "db_host" {
+  description = "The hostname of the PostgreSQL RDS instance"
+  value       = replace(aws_db_instance.postgresql.endpoint, ":${aws_db_instance.postgresql.port}", "")
 }
 
-output "postgresql_db_name" {
+output "db_port" {
+  description = "The port of the PostgreSQL RDS instance"
+  value       = aws_db_instance.postgresql.port
+}
+
+output "db_name" {
   description = "The database name"
   value       = aws_db_instance.postgresql.db_name
 }
 
-output "postgresql_username" {
+output "db_username" {
   description = "The master username for the database"
   value       = aws_db_instance.postgresql.username
 }
 
-output "postgresql_password_param" {
+output "db_password_param" {
   description = "The SSM parameter name for the database password"
   value       = aws_ssm_parameter.db_password.name
 }
