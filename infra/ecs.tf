@@ -39,23 +39,26 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
         Action = [
           "s3:PutObject",
           "s3:GetObject",
-          "s3:ListBucket"
+          "s3:ListBucket",
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+          "rds-db:connect",
+          "rds:DescribeDBInstances",
+          "rds:DescribeDBClusters",
+          "ssm:GetParameter",
+          "ssm:GetParameters"
         ]
         Resource = [
           aws_s3_bucket.storage.arn,
-          "${aws_s3_bucket.storage.arn}/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "dynamodb:PutItem",
-          "dynamodb:GetItem",
-          "dynamodb:Query",
-          "dynamodb:BatchWriteItem"
-        ]
-        Resource = [
-          aws_dynamodb_table.newsletter_metadata.arn
+          "${aws_s3_bucket.storage.arn}/*",
+          aws_dynamodb_table.newsletter_metadata.arn,
+          "arn:aws:dynamodb:${var.region}:${data.aws_caller_identity.current.account_id}:table/${local.metadata_table_name}",
+          aws_db_instance.postgresql.arn,
+          aws_ssm_parameter.db_password.arn
         ]
       },
       {

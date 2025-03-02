@@ -9,6 +9,10 @@ data "aws_subnets" "default" {
   }
 }
 
+data "aws_route_tables" "default" {
+  vpc_id = data.aws_vpc.default.id
+}
+
 resource "aws_security_group" "ecs_tasks" {
   name        = "${local.resource_prefix}-ecs-tasks-${local.resource_suffix}"
   description = "Allow outbound traffic for ECS tasks"
@@ -20,4 +24,44 @@ resource "aws_security_group" "ecs_tasks" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+}
+
+# S3 VPC Endpoint (Gateway type)
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = data.aws_vpc.default.id
+  service_name      = "com.amazonaws.${var.region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = data.aws_route_tables.default.ids
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-s3-endpoint"
+  })
+}
+
+# SSM VPC Endpoint (Interface type)
+resource "aws_vpc_endpoint" "ssm" {
+  vpc_id              = data.aws_vpc.default.id
+  service_name        = "com.amazonaws.${var.region}.ssm"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = data.aws_subnets.default.ids
+  security_group_ids  = [aws_security_group.lambda_sg.id]
+  private_dns_enabled = true
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-ssm-endpoint"
+  })
+}
+
+# SES VPC Endpoint (Interface type)
+resource "aws_vpc_endpoint" "ses" {
+  vpc_id              = data.aws_vpc.default.id
+  service_name        = "com.amazonaws.${var.region}.email-smtp"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = data.aws_subnets.default.ids
+  security_group_ids  = [aws_security_group.lambda_sg.id]
+  private_dns_enabled = true
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-ses-endpoint"
+  })
 } 

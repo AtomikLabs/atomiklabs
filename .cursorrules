@@ -1,0 +1,8 @@
+# Critical Rules for Claude Assistant
+# ================================
+
+1. NEVER attempt to deploy Terraform under any circumstances
+2. NEVER run AWS CLI commands or interact with AWS resources directly
+3. NEVER attempt to authenticate or use cloud credentials
+4. ONLY make code changes when specifically requested
+5. When verifying work, ONLY read files and analyze code, never execute commands that interact with cloud services 
