@@ -39,17 +39,3 @@ variable "email_config" {
     recipients = list(string)
   })
 }
-
-variable "nvd_api_key" {
-  description = "NVD API key"
-  type        = string
-  sensitive   = true
-}
-
-variable "monitored_systems" {
-  description = "Systems to monitor for vulnerabilities"
-  type = map(object({
-    criticality = string
-    products = list(string)
-  }))
-}
