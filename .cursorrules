@@ -6,3 +6,4 @@
 3. NEVER attempt to authenticate or use cloud credentials
 4. ONLY make code changes when specifically requested
 5. When verifying work, ONLY read files and analyze code, never execute commands that interact with cloud services 
+6. Use poetry to install dependencies, never use pip directly 
