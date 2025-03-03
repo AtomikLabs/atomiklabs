@@ -40,12 +40,6 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           "s3:PutObject",
           "s3:GetObject",
           "s3:ListBucket",
-          "dynamodb:PutItem",
-          "dynamodb:GetItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:Query",
-          "dynamodb:Scan",
           "rds-db:connect",
           "rds:DescribeDBInstances",
           "rds:DescribeDBClusters",
@@ -55,8 +49,6 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
         Resource = [
           aws_s3_bucket.storage.arn,
           "${aws_s3_bucket.storage.arn}/*",
-          aws_dynamodb_table.newsletter_metadata.arn,
-          "arn:aws:dynamodb:${var.region}:${data.aws_caller_identity.current.account_id}:table/${local.metadata_table_name}",
           aws_db_instance.postgresql.arn,
           aws_ssm_parameter.db_password.arn
         ]
@@ -72,7 +64,6 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           aws_ssm_parameter.arxiv_back_date.arn,
           aws_ssm_parameter.arxiv_set.arn,
           aws_ssm_parameter.s3_bucket.arn,
-          aws_ssm_parameter.dynamodb_table.arn,
           aws_ssm_parameter.nvd_api_key.arn,
           aws_ssm_parameter.nvd_monitored_systems.arn,
           aws_ssm_parameter.nvd_s3_bucket.arn
