@@ -1,4 +1,3 @@
-# PostgreSQL RDS instance configuration
 resource "aws_db_subnet_group" "postgresql" {
   name       = "${local.resource_prefix}-subnet-group-${local.resource_suffix}"
   subnet_ids = data.aws_subnets.default.ids
@@ -73,7 +72,6 @@ resource "aws_db_instance" "postgresql" {
   tags = local.common_tags
 }
 
-# Store the database password in SSM Parameter Store
 resource "aws_ssm_parameter" "db_password" {
   name        = "/${var.project}/${var.environment}/db_password"
   description = "PostgreSQL database password"
@@ -83,14 +81,12 @@ resource "aws_ssm_parameter" "db_password" {
   tags = local.common_tags
 }
 
-# Generate a random password for the database
 resource "random_password" "db_password" {
   length           = 16
   special          = true
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
-# Create a security group for Lambda functions
 resource "aws_security_group" "lambda_sg" {
   name        = "${local.resource_prefix}-lambda-sg-${local.resource_suffix}"
   description = "Security group for Lambda functions to access RDS"

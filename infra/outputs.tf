@@ -28,7 +28,6 @@ output "postgresql_password_param" {
   value       = aws_ssm_parameter.db_password.name
 }
 
-# API Gateway outputs
 output "api_gateway_url" {
   description = "The URL of the API Gateway"
   value       = "${aws_api_gateway_deployment.main.invoke_url}${aws_api_gateway_stage.main.stage_name}/"

@@ -8,7 +8,6 @@ resource "aws_lambda_function" "mailer" {
   timeout         = 180
   memory_size     = 256
 
-  # Configure VPC for RDS access
   vpc_config {
     subnet_ids         = data.aws_subnets.default.ids
     security_group_ids = [aws_security_group.lambda_sg.id]
