@@ -196,3 +196,12 @@ cline_docs/
 
 summaries/
 scripts/custom/summaries/
+
+# Local Terraform files
+backend-local.hcl
+.env.local
+terraform.tfstate*
+local-tf.sh
+
+# AWS login
+awslogin.sh

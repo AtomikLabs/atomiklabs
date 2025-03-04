@@ -66,8 +66,6 @@ jobs:
           TF_VAR_region: ${{ vars.AWS_REGION }}
           TF_VAR_resource_uuid: ${{ vars.AWS_RESOURCE_UUID }}
           TF_VAR_email_config: ${{ vars.AWS_EMAIL_CONFIG }}
-          TF_VAR_nvd_api_key: ${{ secrets.NVD_API_KEY }}
-          TF_VAR_monitored_systems: ${{ vars.MONITORED_SYSTEMS }}
           TF_LOG: DEBUG
         run: |
           echo "Current directory contents:"
@@ -82,8 +80,6 @@ jobs:
           TF_VAR_region: ${{ vars.AWS_REGION }}
           TF_VAR_resource_uuid: ${{ vars.AWS_RESOURCE_UUID }}
           TF_VAR_email_config: ${{ vars.AWS_EMAIL_CONFIG }}
-          TF_VAR_nvd_api_key: ${{ secrets.NVD_API_KEY }}
-          TF_VAR_monitored_systems: ${{ vars.MONITORED_SYSTEMS }}
         run: |
           terraform apply -auto-approve tfplan
           
@@ -139,12 +135,3 @@ jobs:
           echo "Building ArXiv processor image for repository: ${{ env.ECR_REPO }}"
           docker build -t ${{ env.ECR_REPO }}:arxiv .
           docker push ${{ env.ECR_REPO }}:arxiv
-
-      - name: Build and push NVD checker
-        working-directory: ./services/nvd_checker
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          echo "Building NVD checker image for repository: ${{ env.ECR_REPO }}"
-          docker build -t ${{ env.ECR_REPO }}:nvd .
-          docker push ${{ env.ECR_REPO }}:nvd

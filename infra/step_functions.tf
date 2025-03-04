@@ -29,9 +29,7 @@ resource "aws_iam_role_policy" "step_functions" {
         ]
         Resource = [
           aws_ecs_task_definition.arxiv_processor.arn,
-          aws_ecs_task_definition.nvd_checker.arn,
-          replace(aws_ecs_task_definition.arxiv_processor.arn, "/:\\d+$/", ":*"),
-          replace(aws_ecs_task_definition.nvd_checker.arn, "/:\\d+$/", ":*")
+          replace(aws_ecs_task_definition.arxiv_processor.arn, "/:\\d+$/", ":*")
         ]
       },
       {
@@ -94,36 +92,6 @@ resource "aws_sfn_state_machine" "daily_processor" {
             ContainerOverrides = [
               {
                 Name = "arxiv-processor",
-                Environment = [
-                  {
-                    Name = "CONFIG_PATH",
-                    Value = "/${var.project}/${var.environment}"
-                  }
-                ]
-              }
-            ]
-          }
-        }
-        Next = "Check Vulnerabilities"
-      },
-      "Check Vulnerabilities" = {
-        Type = "Task"
-        Resource = "arn:aws:states:::ecs:runTask.sync"
-        Parameters = {
-          LaunchType = "FARGATE"
-          Cluster = aws_ecs_cluster.arxiv.arn
-          TaskDefinition = aws_ecs_task_definition.nvd_checker.arn
-          NetworkConfiguration = {
-            AwsvpcConfiguration = {
-              Subnets = data.aws_subnets.default.ids
-              SecurityGroups = [aws_security_group.ecs_tasks.id]
-              AssignPublicIp = "ENABLED"
-            }
-          }
-          Overrides = {
-            ContainerOverrides = [
-              {
-                Name = "nvd-checker",
                 Environment = [
                   {
                     Name = "CONFIG_PATH",
