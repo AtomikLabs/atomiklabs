@@ -26,7 +26,6 @@ resource "aws_security_group" "ecs_tasks" {
   }
 }
 
-# S3 VPC Endpoint (Gateway type)
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = data.aws_vpc.default.id
   service_name      = "com.amazonaws.${var.region}.s3"
@@ -38,7 +37,6 @@ resource "aws_vpc_endpoint" "s3" {
   })
 }
 
-# SSM VPC Endpoint (Interface type)
 resource "aws_vpc_endpoint" "ssm" {
   vpc_id              = data.aws_vpc.default.id
   service_name        = "com.amazonaws.${var.region}.ssm"

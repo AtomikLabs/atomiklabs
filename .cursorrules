@@ -1,9 +1,14 @@
 # Critical Rules for Claude Assistant
+
 # ================================
 
 1. NEVER attempt to deploy Terraform under any circumstances
 2. NEVER run AWS CLI commands or interact with AWS resources directly
 3. NEVER attempt to authenticate or use cloud credentials
 4. ONLY make code changes when specifically requested
-5. When verifying work, ONLY read files and analyze code, never execute commands that interact with cloud services 
-6. Use poetry to install dependencies, never use pip directly 
+5. When verifying work, ONLY read files and analyze code, never execute commands that interact with cloud services
+6. Use poetry to install dependencies, never use pip directly
+7. NEVER jump into execution or building without planning. Ask clarifying questions first if necessary.
+8. Design to the level of the current codebase. If it's not an enterprise level application, don't make it enterprise level.
+9. Ask questions if needed, act like an expert architect collaborator.
+10. NEVER add comments that are just labels. Only add comments that are helpful to a senior developer reading the code.
