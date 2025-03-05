@@ -8,10 +8,13 @@ import uuid
 from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
 
+# Import pydantic ValidationError
+from pydantic import ValidationError
+
 # Import the shared models and DB access layer
 from shared.models.schemas import (
     Paper, PaperDetail, PaperSearchRequest, PaginatedResponse,
-    ErrorResponse, ValidationError, APIResponse
+    ErrorResponse
 )
 from shared.db import (
     get_db_connection,
@@ -51,24 +54,30 @@ def handle_error(error: Exception) -> Dict[str, Any]:
     
     if isinstance(error, ValidationError):
         return _build_response(400, ErrorResponse(
-            error_code="VALIDATION_ERROR",
-            message=str(error),
-            details=error.errors
+            error="VALIDATION_ERROR",
+            details={
+                "message": str(error),
+                "errors": error.errors
+            }
         ).dict())
     
     # Handle database connection errors
     if "database" in str(error).lower() or "connection" in str(error).lower():
         return _build_response(503, ErrorResponse(
-            error_code="DATABASE_ERROR",
-            message="Database connection error",
-            details=str(error)
+            error="DATABASE_ERROR",
+            details={
+                "message": "Database connection error",
+                "info": str(error)
+            }
         ).dict())
     
     # Generic error handling
     return _build_response(500, ErrorResponse(
-        error_code="SERVER_ERROR",
-        message="An unexpected error occurred",
-        details=str(error)
+        error="SERVER_ERROR",
+        details={
+            "message": "An unexpected error occurred",
+            "info": str(error)
+        }
     ).dict())
 
 def get_papers_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -171,8 +180,7 @@ def get_paper_by_id_handler(event: Dict[str, Any], context: Any) -> Dict[str, An
         
         if not paper_id:
             return _build_response(400, ErrorResponse(
-                error_code="MISSING_PARAMETER",
-                message="Paper ID is required",
+                error="MISSING_PARAMETER",
                 details=None
             ).dict())
         
@@ -181,8 +189,7 @@ def get_paper_by_id_handler(event: Dict[str, Any], context: Any) -> Dict[str, An
             paper_id = str(uuid.UUID(paper_id))
         except ValueError:
             return _build_response(400, ErrorResponse(
-                error_code="INVALID_PARAMETER",
-                message="Invalid paper ID format",
+                error="INVALID_PARAMETER",
                 details="Paper ID must be a valid UUID"
             ).dict())
         
@@ -193,8 +200,7 @@ def get_paper_by_id_handler(event: Dict[str, Any], context: Any) -> Dict[str, An
             
             if not paper:
                 return _build_response(404, ErrorResponse(
-                    error_code="NOT_FOUND",
-                    message="Paper not found",
+                    error="NOT_FOUND",
                     details=f"No paper found with ID {paper_id}"
                 ).dict())
             
@@ -223,9 +229,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return get_paper_by_id_handler(event, context)
         else:
             return _build_response(405, ErrorResponse(
-                error_code="METHOD_NOT_ALLOWED",
-                message=f"Method {http_method} not allowed for resource {resource}",
-                details=None
+                error="METHOD_NOT_ALLOWED",
+                details=f"Method {http_method} not allowed for resource {resource}"
             ).dict())
             
     except Exception as e:

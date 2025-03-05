@@ -9,10 +9,23 @@ readme = "README.md"
 requires-python = "^3.11"
 dependencies = [
     "boto3 (>=1.37.6,<2.0.0)",
-    "aws-lambda-powertools (>=3.7.0,<4.0.0)"
+    "aws-lambda-powertools (>=3.7.0,<4.0.0)",
+    "pydantic (>=2.10.6,<3.0.0)"
 ]
 
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+pytest-cov = "^6.0.0"
+arxiv-shared = {path = "../../shared", develop = true}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+pythonpath = [".", "src", "tests", "../.."]
+addopts = "--cov=src --cov-report=term-missing"
+

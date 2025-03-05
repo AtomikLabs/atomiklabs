@@ -172,7 +172,7 @@ def paper_to_detail(paper_model: PaperModel) -> PaperDetail:
         primary_category=primary_category.category_code if primary_category else "",
         authors=authors,
         categories=categories,
-        primary_category=primary_category if primary_category else None,
+        primary_category_object=primary_category if primary_category else None,
         abstract_url=abstract_url,
         created_at=paper_model.created_at,
         updated_at=paper_model.updated_at

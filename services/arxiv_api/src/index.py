@@ -48,9 +48,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'Access-Control-Allow-Origin': '*'
                 },
                 'body': json.dumps({
-                    'error_code': 'NOT_FOUND',
-                    'message': f'Resource not found: {resource}',
-                    'details': None
+                    'error': 'NOT_FOUND',
+                    'details': {
+                        'message': f'Resource not found: {resource}'
+                    }
                 })
             }
             
@@ -63,8 +64,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'Access-Control-Allow-Origin': '*'
             },
             'body': json.dumps({
-                'error_code': 'SERVER_ERROR',
-                'message': 'An unexpected error occurred',
-                'details': str(e)
+                'error': 'SERVER_ERROR',
+                'details': {
+                    'message': 'An unexpected error occurred',
+                    'info': str(e)
+                }
             })
         } 
