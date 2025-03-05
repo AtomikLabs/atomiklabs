@@ -42,9 +42,19 @@ jobs:
           cd ../services/arxiv_mailer/src
           zip -r ../../../infra/build/mailer.zip ./*
           
+          echo "Packaging shared Lambda layer..."
+          cd ../../../shared
+          mkdir -p python
+          cp -R . python/
+          zip -r ../infra/build/shared_layer.zip python/
+          rm -rf python
+          
           echo "Verifying zip contents..."
-          cd ../../../infra
+          cd ../infra
+          echo "Mailer Lambda:"
           unzip -l build/mailer.zip
+          echo "Shared Layer:"
+          unzip -l build/shared_layer.zip
           
           echo "Build directory contents:"
           ls -la build/
@@ -52,6 +62,8 @@ jobs:
           echo "Calculating source_code_hash..."
           sha256sum build/mailer.zip
           base64 -w0 build/mailer.zip | sha256sum
+          sha256sum build/shared_layer.zip
+          base64 -w0 build/shared_layer.zip | sha256sum
 
       - name: Terraform Init
         run: |

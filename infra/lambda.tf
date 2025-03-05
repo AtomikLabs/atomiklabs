@@ -7,6 +7,9 @@ resource "aws_lambda_function" "mailer" {
   runtime         = "python3.11"
   timeout         = 180
   memory_size     = 256
+  
+  # Add the shared layer to the function
+  layers          = [aws_lambda_layer_version.shared_layer.arn]
 
   vpc_config {
     subnet_ids         = data.aws_subnets.default.ids
