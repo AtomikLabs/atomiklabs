@@ -22,6 +22,18 @@ jobs:
       - name: Git clone the repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
@@ -32,35 +44,58 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         
-      - name: Package Lambda
+      - name: Package Lambda Functions and Layers
         run: |
           echo "Creating build directory..."
           mkdir -p build
           chmod 777 build
           
+          # Package Mailer Lambda code
           echo "Packaging Mailer Lambda code..."
           cd ../services/arxiv_mailer/src
           zip -r ../../../infra/build/mailer.zip ./*
+          cd ../../../
           
-          echo "Packaging API Lambda code..."
-          cd ../../arxiv_api/src
-          zip -r ../../../infra/build/arxiv_api.zip ./*
+          # Package API Lambda code
+          echo "Packaging API Lambda code with Poetry..."
+          cd services/arxiv_api
           
-          echo "Packaging shared Lambda layer..."
-          cd ../../../shared
-          mkdir -p python
-          cp -R . python/
+          # Export dependencies
+          python export_requirements.py
+          
+          # Run build script
+          python build.py
+          cd ../../
+          
+          # Package shared Lambda layer with dependencies
+          echo "Packaging shared Lambda layer with dependencies..."
+          mkdir -p lambda_layer/python
+          
+          # Export dependencies from poetry
+          cd shared
+          poetry export -f requirements.txt --output ../requirements.txt --without-dev --without-hashes
+          cd ..
+          
+          # Install dependencies into layer directory
+          pip install -r requirements.txt --target lambda_layer/python/ --no-deps
+          
+          # Copy our shared code
+          cp -R shared/* lambda_layer/python/
+          
+          # Create the layer zip
+          cd lambda_layer
           zip -r ../infra/build/shared_layer.zip python/
-          rm -rf python
+          cd ..
           
+          # Verify build artifacts
           echo "Verifying zip contents..."
-          cd ../infra
+          cd infra
           echo "Mailer Lambda:"
-          unzip -l build/mailer.zip
+          unzip -l build/mailer.zip | head -20
           echo "API Lambda:"
-          unzip -l build/arxiv_api.zip
-          echo "Shared Layer:"
-          unzip -l build/shared_layer.zip
+          unzip -l build/arxiv_api.zip | head -20
+          echo "Shared Layer (showing first 20 files):"
+          unzip -l build/shared_layer.zip | head -20
           
           echo "Build directory contents:"
           ls -la build/
@@ -127,6 +162,18 @@ jobs:
       - name: Git clone the repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
@@ -162,5 +209,5 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "Building ArXiv processor image for repository: ${{ env.ECR_REPO }}"
-          docker build -t ${{ env.ECR_REPO }}:arxiv .
+          docker build -t ${{ env.ECR_REPO }}:arxiv --no-cache --build-arg BUILDKIT_INLINE_CACHE=0 -f Dockerfile ../..
           docker push ${{ env.ECR_REPO }}:arxiv
