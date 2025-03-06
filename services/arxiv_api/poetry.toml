@@ -1,0 +1,10 @@
+[virtualenvs]
+in-project = true
+create = true
+
+[build]
+generate-setup-file = false
+script = "build.py"
+
+[installer]
+no-binary = [] 

@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "arxiv-api"
+version = "0.1.0"
+description = "API for arXiv data layer"
+authors = ["Brad Edwards <j.bradley.edwards@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+boto3 = "^1.37.6"
+aws-lambda-powertools = "^3.7.0"
+pydantic = "^2.10.6"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+pytest-cov = "^6.0.0"
+arxiv-shared = {path = "../../shared", develop = true}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+pythonpath = [".", "src", "tests", "../.."]
+addopts = "--cov=src --cov-report=term-missing"
+

@@ -37,3 +37,8 @@ output "api_gateway_id" {
   description = "The ID of the API Gateway REST API"
   value       = aws_api_gateway_rest_api.main.id
 }
+
+output "api_lambda_function_name" {
+  description = "Name of the arXiv API Lambda function"
+  value       = aws_lambda_function.arxiv_api.function_name
+}

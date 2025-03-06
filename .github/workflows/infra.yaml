@@ -22,6 +22,18 @@ jobs:
       - name: Git clone the repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
@@ -32,19 +44,59 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         
-      - name: Package Lambda
+      - name: Package Lambda Functions and Layers
         run: |
           echo "Creating build directory..."
           mkdir -p build
           chmod 777 build
           
-          echo "Packaging Lambda code..."
+          # Package Mailer Lambda code
+          echo "Packaging Mailer Lambda code..."
           cd ../services/arxiv_mailer/src
           zip -r ../../../infra/build/mailer.zip ./*
+          cd ../../../
           
+          # Package API Lambda code
+          echo "Packaging API Lambda code with Poetry..."
+          cd services/arxiv_api
+          
+          # Export dependencies
+          python export_requirements.py
+          
+          # Run build script
+          python build.py
+          cd ../../
+          
+          # Package shared Lambda layer with dependencies
+          echo "Packaging shared Lambda layer with dependencies..."
+          mkdir -p lambda_layer/python
+          
+          # Export dependencies from poetry using our script
+          cd shared
+          echo "Running shared export script..."
+          python export_requirements.py
+          cd ..
+          
+          # Install dependencies into layer directory
+          pip install -r shared/requirements.txt --target lambda_layer/python/ --no-deps
+          
+          # Copy our shared code
+          cp -R shared/* lambda_layer/python/
+          
+          # Create the layer zip
+          cd lambda_layer
+          zip -r ../infra/build/shared_layer.zip python/
+          cd ..
+          
+          # Verify build artifacts
           echo "Verifying zip contents..."
-          cd ../../../infra
-          unzip -l build/mailer.zip
+          cd infra
+          echo "Mailer Lambda:"
+          unzip -l build/mailer.zip | head -20
+          echo "API Lambda:"
+          unzip -l build/arxiv_api.zip | head -20
+          echo "Shared Layer (showing first 20 files):"
+          unzip -l build/shared_layer.zip | head -20
           
           echo "Build directory contents:"
           ls -la build/
@@ -52,6 +104,10 @@ jobs:
           echo "Calculating source_code_hash..."
           sha256sum build/mailer.zip
           base64 -w0 build/mailer.zip | sha256sum
+          sha256sum build/arxiv_api.zip
+          base64 -w0 build/arxiv_api.zip | sha256sum
+          sha256sum build/shared_layer.zip
+          base64 -w0 build/shared_layer.zip | sha256sum
 
       - name: Terraform Init
         run: |
@@ -83,9 +139,18 @@ jobs:
         run: |
           terraform apply -auto-approve tfplan
           
-          echo "Verifying Lambda function..."
+          echo "Verifying Lambda functions..."
+          # Verify mailer Lambda
+          echo "Mailer Lambda:"
           aws lambda get-function \
             --function-name $(terraform output -raw lambda_function_name) \
+            --query 'Configuration.[FunctionName,LastModified,CodeSize]' \
+            --output table
+            
+          # Verify API Lambda
+          echo "API Lambda:"
+          aws lambda get-function \
+            --function-name $(terraform output -raw api_lambda_function_name) \
             --query 'Configuration.[FunctionName,LastModified,CodeSize]' \
             --output table
 
@@ -97,6 +162,18 @@ jobs:
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4.1.0
@@ -133,5 +210,5 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "Building ArXiv processor image for repository: ${{ env.ECR_REPO }}"
-          docker build -t ${{ env.ECR_REPO }}:arxiv .
+          docker build -t ${{ env.ECR_REPO }}:arxiv --no-cache --build-arg BUILDKIT_INLINE_CACHE=0 -f Dockerfile ../..
           docker push ${{ env.ECR_REPO }}:arxiv

@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "arxiv-shared"
+version = "0.1.0"
+description = "Shared models and utilities for arXiv data processing"
+authors = ["Brad Edwards <j.bradley.edwards@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pydantic = "^2.10.6"
+sqlalchemy = "^2.0.38"
+boto3 = "^1.37.6"
+psycopg2-binary = "^2.9.10"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+black = "^25.1.0"
+flake8 = "^7.1.2"
+isort = "^6.0.1"
+pytest-cov = "^6.0.0"
+
