@@ -13,8 +13,7 @@ from sqlalchemy import (
     ForeignKey, UniqueConstraint, Index, Table
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, declarative_base
 
 # Base class for all models
 Base = declarative_base()
