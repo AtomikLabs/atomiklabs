@@ -71,13 +71,14 @@ jobs:
           echo "Packaging shared Lambda layer with dependencies..."
           mkdir -p lambda_layer/python
           
-          # Export dependencies from poetry
+          # Export dependencies from poetry using our script
           cd shared
-          poetry export -f requirements.txt --output ../requirements.txt --without-dev --without-hashes
+          echo "Running shared export script..."
+          python export_requirements.py
           cd ..
           
           # Install dependencies into layer directory
-          pip install -r requirements.txt --target lambda_layer/python/ --no-deps
+          pip install -r shared/requirements.txt --target lambda_layer/python/ --no-deps
           
           # Copy our shared code
           cp -R shared/* lambda_layer/python/
