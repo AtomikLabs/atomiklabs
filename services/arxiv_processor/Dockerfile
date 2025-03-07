@@ -2,17 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install Poetry 2.x and the export plugin
-RUN pip install "poetry>=2.0.0" poetry-plugin-export
+# Copy requirements files
+COPY services/arxiv_processor/requirements.txt /app/requirements.txt
+COPY shared/requirements.txt /app/shared_requirements.txt
 
-# Copy pyproject.toml from shared package
-COPY shared/pyproject.toml shared/
-
-# Use poetry with the export plugin
-RUN cd shared && \
-    poetry config virtualenvs.create false && \
-    poetry export --format requirements.txt --output /tmp/requirements.txt --without dev --without-hashes && \
-    pip install -r /tmp/requirements.txt
+# Install dependencies
+RUN pip install -r /app/requirements.txt -r /app/shared_requirements.txt
 
 # Copy shared package code
 COPY shared /app/shared
