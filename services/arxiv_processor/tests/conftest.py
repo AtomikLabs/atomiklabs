@@ -13,6 +13,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
+# Add src to Python path for tests
+src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src'))
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
+
 # Mock os.environ.get to return test values for environment variables
 original_os_environ_get = os.environ.get
 def mock_os_environ_get(key, default=None):

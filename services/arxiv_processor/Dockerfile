@@ -18,7 +18,7 @@ RUN cd shared && \
 COPY shared /app/shared
 
 # Copy service code
-COPY services/arxiv_processor/src /app/
+COPY services/arxiv_processor/src/*.py /app/
 
 # Copy configuration
 COPY services/arxiv_processor/config.json /app/config.json

@@ -13,10 +13,11 @@ import time
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
-from .config import load_config
-from .arxiv_fetcher import fetch_papers_for_date_range
-from .paper_processor import process_papers
-from .api_client import ApiClient
+# Change relative imports to absolute imports
+from config import load_config
+from arxiv_fetcher import fetch_papers_for_date_range
+from paper_processor import process_papers
+from api_client import ApiClient
 
 # Configure logging
 logging.basicConfig(

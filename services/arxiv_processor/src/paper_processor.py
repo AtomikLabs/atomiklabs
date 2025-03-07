@@ -12,7 +12,7 @@ from shared.models.schemas import (
     Paper, Author, Category, PaperAuthor, PaperCategory,
     ArxivSet, AuthorAffiliation, Affiliation
 )
-from .arxiv_fetcher import latex_to_human_readable
+from arxiv_fetcher import latex_to_human_readable
 
 logger = logging.getLogger(__name__)
 
