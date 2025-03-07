@@ -1,0 +1,7 @@
+{
+    "arxiv_categories": ["cs.AI", "cs.CL", "cs.CV", "cs.CR", "cs.RO"],
+    "arxiv_sets": ["cs"],
+    "days_lookback": 3,
+    "batch_size": 10,
+    "s3_abstract_prefix": "abstracts/"
+}

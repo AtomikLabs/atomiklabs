@@ -20,6 +20,9 @@ COPY shared /app/shared
 # Copy service code
 COPY services/arxiv_processor/src /app/
 
+# Copy configuration
+COPY services/arxiv_processor/config.json /app/config.json
+
 # Set environment variables
 ENV PYTHONPATH=/app
 

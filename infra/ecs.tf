@@ -42,28 +42,12 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           "s3:ListBucket",
           "rds-db:connect",
           "rds:DescribeDBInstances",
-          "rds:DescribeDBClusters",
-          "ssm:GetParameter",
-          "ssm:GetParameters"
+          "rds:DescribeDBClusters"
         ]
         Resource = [
           aws_s3_bucket.storage.arn,
           "${aws_s3_bucket.storage.arn}/*",
-          aws_db_instance.postgresql.arn,
-          aws_ssm_parameter.db_password.arn
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ssm:GetParameter",
-          "ssm:GetParameters"
-        ]
-        Resource = [
-          aws_ssm_parameter.arxiv_categories.arn,
-          aws_ssm_parameter.arxiv_back_date.arn,
-          aws_ssm_parameter.arxiv_set.arn,
-          aws_ssm_parameter.s3_bucket.arn
+          aws_db_instance.postgresql.arn
         ]
       }
     ]
@@ -110,7 +94,7 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
       name  = "arxiv-processor"
       image = "${aws_ecr_repository.daily_processor.repository_url}:arxiv"
       environment = [
-        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
+        { name = "API_ENDPOINT", value = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.region}.amazonaws.com/${var.environment}" }
       ]
       logConfiguration = {
         logDriver = "awslogs"

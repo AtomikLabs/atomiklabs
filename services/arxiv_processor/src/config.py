@@ -2,15 +2,13 @@
 """
 Configuration for the ArXiv processor
 
-This module loads configuration from environment variables or a config file.
+This module loads configuration from a JSON file and environment variables.
 """
 
 import os
 import json
 import logging
 from typing import List, Dict, Any, Optional
-import boto3
-from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +23,6 @@ class ProcessorConfig:
         self.batch_size: int = 10
         self.api_endpoint: str = 'http://localhost:8080'  # Default value
         self.s3_abstract_prefix: str = 'abstracts/'
-        self.load_from_env()
     
     def load_from_env(self) -> None:
         """Load configuration from environment variables."""
@@ -46,41 +43,6 @@ class ProcessorConfig:
         
         if os.environ.get('S3_ABSTRACT_PREFIX'):
             self.s3_abstract_prefix = os.environ.get('S3_ABSTRACT_PREFIX', 'abstracts/')
-
-    def load_from_ssm(self, ssm_path: str) -> None:
-        """Load configuration from AWS SSM Parameter Store."""
-        try:
-            ssm = boto3.client('ssm')
-            # Get all parameters under the given path
-            response = ssm.get_parameters_by_path(
-                Path=ssm_path,
-                Recursive=True,
-                WithDecryption=True
-            )
-            
-            for param in response.get('Parameters', []):
-                name = param['Name'].split('/')[-1]  # Get the last part of the path
-                value = param['Value']
-                
-                if name == 'arxiv_categories':
-                    self.arxiv_categories = value.split(',')
-                elif name == 'arxiv_sets':
-                    self.arxiv_sets = value.split(',')
-                elif name == 'days_lookback':
-                    self.days_lookback = int(value)
-                elif name == 'batch_size':
-                    self.batch_size = int(value)
-                elif name == 'api_endpoint':
-                    self.api_endpoint = value
-                elif name == 's3_abstract_prefix':
-                    self.s3_abstract_prefix = value
-                    
-            logger.info(f"Loaded configuration from SSM path: {ssm_path}")
-            
-        except ClientError as e:
-            logger.error(f"Error loading configuration from SSM: {e}")
-            # Fall back to environment variables
-            logger.info("Falling back to environment variables for configuration")
     
     def __str__(self) -> str:
         """Return a string representation of the configuration."""
@@ -95,13 +57,24 @@ class ProcessorConfig:
 
 
 def load_config() -> ProcessorConfig:
-    """Load configuration from environment variables or SSM."""
+    """Load configuration from JSON file and environment variables."""
     config = ProcessorConfig()
     
-    # Check if we should load from SSM
-    ssm_path = os.environ.get('CONFIG_SSM_PATH')
-    if ssm_path:
-        config.load_from_ssm(ssm_path)
+    # Try to load from JSON file first
+    try:
+        with open('/app/config.json', 'r') as f:
+            config_data = json.load(f)
+            config.arxiv_categories = config_data.get('arxiv_categories', config.arxiv_categories)
+            config.arxiv_sets = config_data.get('arxiv_sets', config.arxiv_sets)
+            config.days_lookback = config_data.get('days_lookback', config.days_lookback)
+            config.batch_size = config_data.get('batch_size', config.batch_size)
+            config.s3_abstract_prefix = config_data.get('s3_abstract_prefix', config.s3_abstract_prefix)
+            logger.info("Loaded configuration from JSON file")
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.warning(f"Could not load config from JSON: {e}, falling back to defaults")
+    
+    # Always check environment variables (override JSON config)
+    config.load_from_env()
     
     logger.info(f"Loaded configuration: {config}")
     return config 

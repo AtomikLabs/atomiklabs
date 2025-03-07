@@ -21,14 +21,9 @@ def mock_os_environ_get(key, default=None):
         'ARXIV_SETS': 'cs',
         'DAYS_LOOKBACK': '1',
         'BATCH_SIZE': '2',
-        'API_ENDPOINT': 'http://localhost:8080',
-        'CONFIG_SSM_PATH': '/test/config'
+        'API_ENDPOINT': 'http://localhost:8080'
     }
     
-    # Don't override if we're looking for CONFIG_PATH for test_load_config
-    if key == 'CONFIG_SSM_PATH' and 'CONFIG_SSM_PATH' in sys._getframe(1).f_globals['__file__']:
-        return default
-        
     return mock_env.get(key, default)
 
 os.environ.get = mock_os_environ_get

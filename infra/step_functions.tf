@@ -88,19 +88,6 @@ resource "aws_sfn_state_machine" "daily_processor" {
               AssignPublicIp = "ENABLED"
             }
           }
-          Overrides = {
-            ContainerOverrides = [
-              {
-                Name = "arxiv-processor",
-                Environment = [
-                  {
-                    Name = "CONFIG_PATH",
-                    Value = "/${var.project}/${var.environment}"
-                  }
-                ]
-              }
-            ]
-          }
         }
         Next = "Send Daily Summary"
       },
