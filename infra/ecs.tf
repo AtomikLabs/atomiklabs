@@ -49,6 +49,15 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           "${aws_s3_bucket.storage.arn}/*",
           aws_db_instance.postgresql.arn
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "execute-api:Invoke"
+        ]
+        Resource = [
+          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*"
+        ]
       }
     ]
   })
