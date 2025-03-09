@@ -129,12 +129,6 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
   ])
 }
 
-# Create CloudWatch log group for ECS task
-resource "aws_cloudwatch_log_group" "arxiv_processor" {
-  name              = "/ecs/${local.resource_prefix}-arxiv-processor-${local.resource_suffix}"
-  retention_in_days = 30
-}
-
 # Create ECS service to run the task
 resource "aws_ecs_service" "arxiv_processor" {
   name            = "${local.resource_prefix}-arxiv-processor-${local.resource_suffix}"
