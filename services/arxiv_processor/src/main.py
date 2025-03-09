@@ -167,7 +167,17 @@ def main():
     try:
         # 1. Load configuration
         config = load_config()
-        logger.info(f"Using configuration: {json.dumps(config, indent=2)}")
+        
+        # Convert config to a dictionary for logging
+        config_dict = {
+            "arxiv_categories": config.arxiv_categories,
+            "arxiv_sets": config.arxiv_sets,
+            "days_lookback": config.days_lookback,
+            "batch_size": config.batch_size,
+            "api_endpoint": config.api_endpoint,
+            "s3_abstract_prefix": config.s3_abstract_prefix
+        }
+        logger.info(f"Using configuration: {json.dumps(config_dict, indent=2)}")
         
         # 2. Fetch papers from ArXiv for specified date range
         logger.info(f"Fetching papers for sets: {config.arxiv_sets}, categories: {config.arxiv_categories}")
