@@ -182,9 +182,9 @@ def main():
         # 2. Fetch papers from ArXiv for specified date range
         logger.info(f"Fetching papers for sets: {config.arxiv_sets}, categories: {config.arxiv_categories}")
         papers = fetch_papers_for_date_range(
-            date_from=datetime.now(UTC) - timedelta(days=config.days_lookback),
-            arxiv_sets=config.arxiv_sets,
-            categories=config.arxiv_categories
+            sets=config.arxiv_sets,
+            categories=config.arxiv_categories,
+            days_lookback=config.days_lookback
         )
         logger.info(f"Fetched {len(papers)} papers")
         
