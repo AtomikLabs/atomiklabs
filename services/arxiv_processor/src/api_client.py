@@ -15,6 +15,11 @@ from requests.exceptions import RequestException
 logger = logging.getLogger(__name__)
 
 
+class CircuitBreakerOpenError(Exception):
+    """Exception raised when the circuit breaker is open."""
+    pass
+
+
 class ApiClient:
     """Client for interacting with the ArXiv API Gateway."""
     
@@ -31,6 +36,29 @@ class ApiClient:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.session = requests.Session()
+        
+        # Circuit breaker state
+        self._failures = 0
+        self._failure_threshold = 5
+        self._circuit_open = False
+        self._last_failure_time = 0
+        self._circuit_reset_timeout = 60  # 1 minute timeout before retrying
+    
+    def _check_circuit(self):
+        """Check if circuit breaker is open and handle reset logic"""
+        if not self._circuit_open:
+            return True
+            
+        # Check if enough time has passed to try again
+        current_time = time.time()
+        if current_time - self._last_failure_time >= self._circuit_reset_timeout:
+            logger.info("Circuit breaker reset timeout reached, attempting to close circuit")
+            self._circuit_open = False
+            self._failures = 0
+            return True
+            
+        logger.warning(f"Circuit breaker is open. API Gateway appears to be down. Will retry in {self._circuit_reset_timeout - (current_time - self._last_failure_time):.0f} seconds")
+        return False
     
     def _make_request(
         self, 
@@ -54,6 +82,10 @@ class ApiClient:
         Raises:
             RequestException: If the request fails after retries
         """
+        # Check if circuit breaker is open
+        if not self._check_circuit():
+            raise CircuitBreakerOpenError("Circuit breaker is open, API is not responsive")
+            
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         retry_count = 0
         current_delay = self.retry_delay
@@ -81,6 +113,17 @@ class ApiClient:
                     if 400 <= response.status_code < 500 and response.status_code != 429:
                         response.raise_for_status()
                     
+                    # For 5xx errors, increment failure counter for circuit breaker
+                    if 500 <= response.status_code < 600:
+                        self._failures += 1
+                        self._last_failure_time = time.time()
+                        
+                        # Check if we should open the circuit breaker
+                        if self._failures >= self._failure_threshold:
+                            logger.error(f"Circuit breaker threshold reached ({self._failures} failures). Opening circuit breaker.")
+                            self._circuit_open = True
+                            raise CircuitBreakerOpenError("Circuit breaker opened due to multiple failures")
+                    
                     # For other error codes, retry
                     retry_count += 1
                     if retry_count > self.max_retries:
@@ -90,6 +133,10 @@ class ApiClient:
                     current_delay *= 2  # Exponential backoff
                     continue
                 
+                # Success - reset circuit breaker state
+                self._failures = 0
+                self._circuit_open = False
+                
                 # Parse the response
                 if response.text:
                     return response.json()
@@ -97,6 +144,17 @@ class ApiClient:
                 
             except RequestException as e:
                 logger.error(f"Request error: {e}")
+                
+                # Increment failure counter for circuit breaker
+                self._failures += 1
+                self._last_failure_time = time.time()
+                
+                # Check if we should open the circuit breaker
+                if self._failures >= self._failure_threshold:
+                    logger.error(f"Circuit breaker threshold reached ({self._failures} failures). Opening circuit breaker.")
+                    self._circuit_open = True
+                    raise CircuitBreakerOpenError("Circuit breaker opened due to multiple failures")
+                
                 retry_count += 1
                 if retry_count > self.max_retries:
                     raise

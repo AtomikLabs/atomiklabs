@@ -51,11 +51,12 @@ def export_requirements():
                 
                 # Create a temporary requirements file using pip freeze
                 with open(requirements_file, 'w') as f:
-                    # Write required dependencies for shared package
+                    # Write required dependencies
                     f.write("pydantic>=2.10.6,<3.0.0\n")
                     f.write("sqlalchemy>=2.0.38,<3.0.0\n")
                     f.write("boto3>=1.37.6,<2.0.0\n")
                     f.write("psycopg2-binary>=2.9.10,<3.0.0\n")
+                    f.write("typing-extensions>=4.12.2,<5.0.0\n")  # Explicitly add typing_extensions
                 
                 print(f"Created requirements file at {requirements_file} with hardcoded dependencies")
                 print("Note: This is a fallback solution. For proper exports, install poetry-plugin-export")
@@ -76,6 +77,14 @@ def export_requirements():
             ]
             print(f"Executing: {' '.join(cmd)}")
             subprocess.run(cmd, check=True, capture_output=True, text=True)
+            
+            # Verify that typing_extensions is included
+            with open(requirements_file, 'r') as f:
+                if "typing-extensions" not in f.read().lower():
+                    print("Warning: typing-extensions not found in exported requirements, adding it manually")
+                    with open(requirements_file, 'a') as f:
+                        f.write("typing-extensions>=4.12.2,<5.0.0\n")
+            
         except subprocess.CalledProcessError as e:
             error_msg = ""
             if hasattr(e, 'stderr'):
@@ -87,11 +96,12 @@ def export_requirements():
                     print("Export command not available. Using alternative method...")
                     # Create a requirements file with hardcoded dependencies
                     with open(requirements_file, 'w') as f:
-                        # Write required dependencies for shared package
+                        # Write required dependencies
                         f.write("pydantic>=2.10.6,<3.0.0\n")
                         f.write("sqlalchemy>=2.0.38,<3.0.0\n")
                         f.write("boto3>=1.37.6,<2.0.0\n")
                         f.write("psycopg2-binary>=2.9.10,<3.0.0\n")
+                        f.write("typing-extensions>=4.12.2,<5.0.0\n")  # Explicitly add typing_extensions
                 else:
                     # Try alternate syntax for newer Poetry versions
                     cmd = [
@@ -103,6 +113,13 @@ def export_requirements():
                     ]
                     print(f"Retrying with alternate syntax: {' '.join(cmd)}")
                     subprocess.run(cmd, check=True)
+                    
+                    # Verify that typing_extensions is included
+                    with open(requirements_file, 'r') as f:
+                        if "typing-extensions" not in f.read().lower():
+                            print("Warning: typing-extensions not found in exported requirements, adding it manually")
+                            with open(requirements_file, 'a') as f:
+                                f.write("typing-extensions>=4.12.2,<5.0.0\n")
             else:
                 raise
         
@@ -121,11 +138,11 @@ def export_requirements():
         # Last resort fallback - create a simple requirements file with known dependencies
         print("Using emergency fallback to create requirements.txt")
         with open(requirements_file, 'w') as f:
-            # Write required dependencies for shared package
             f.write("pydantic>=2.10.6,<3.0.0\n")
             f.write("sqlalchemy>=2.0.38,<3.0.0\n")
             f.write("boto3>=1.37.6,<2.0.0\n")
             f.write("psycopg2-binary>=2.9.10,<3.0.0\n")
+            f.write("typing-extensions>=4.12.2,<5.0.0\n")  # Explicitly add typing_extensions
         
         print(f"Created emergency requirements file at {requirements_file}")
         return 0  # Return success to not break the build
@@ -135,11 +152,11 @@ def export_requirements():
         # Last resort fallback - create a simple requirements file with known dependencies
         print("Using emergency fallback to create requirements.txt")
         with open(requirements_file, 'w') as f:
-            # Write required dependencies for shared package
             f.write("pydantic>=2.10.6,<3.0.0\n")
             f.write("sqlalchemy>=2.0.38,<3.0.0\n")
             f.write("boto3>=1.37.6,<2.0.0\n")
             f.write("psycopg2-binary>=2.9.10,<3.0.0\n")
+            f.write("typing-extensions>=4.12.2,<5.0.0\n")  # Explicitly add typing_extensions
         
         print(f"Created emergency requirements file at {requirements_file}")
         return 0  # Return success to not break the build

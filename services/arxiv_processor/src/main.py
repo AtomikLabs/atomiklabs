@@ -12,12 +12,13 @@ import json
 import time
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+import uuid
 
 # Change relative imports to absolute imports
 from config import load_config
 from arxiv_fetcher import fetch_papers_for_date_range
 from paper_processor import process_papers
-from api_client import ApiClient
+from api_client import ApiClient, CircuitBreakerOpenError
 
 # Configure logging
 logging.basicConfig(
@@ -58,6 +59,12 @@ def process_batch(
     for paper in batch_data["papers"]:
         try:
             paper_dict = paper.model_dump()
+            
+            # Convert UUID objects to strings to ensure JSON serialization works
+            for key, value in paper_dict.items():
+                if isinstance(value, uuid.UUID):
+                    paper_dict[key] = str(value)
+                    
             arxiv_id = paper_dict["arxiv_identifier"]
             
             # Check if paper exists
@@ -155,6 +162,9 @@ def main():
         paper_batches = chunk_list(processed_data["papers"], config.batch_size)
         abstract_batches = chunk_list(processed_data["abstracts"], config.batch_size)
         
+        batch_failures = 0
+        max_batch_failures = 2  # Stop processing after 2 consecutive batch failures
+        
         for i, paper_batch in enumerate(paper_batches):
             abstract_batch = abstract_batches[i] if i < len(abstract_batches) else []
             
@@ -164,11 +174,27 @@ def main():
             }
             
             logger.info(f"Processing batch {i+1}/{len(paper_batches)} ({len(paper_batch)} papers)")
-            batch_results = process_batch(batch_data, api_client)
             
-            # Update total results
-            for key, value in batch_results.items():
-                total_results[key] += value
+            try:
+                batch_results = process_batch(batch_data, api_client)
+                batch_failures = 0  # Reset failures counter on success
+                
+                # Update total results
+                for key, value in batch_results.items():
+                    total_results[key] += value
+                
+            except CircuitBreakerOpenError as e:
+                logger.error(f"Circuit breaker open, API is not responding: {e}")
+                logger.error("Stopping batch processing as API is unresponsive")
+                break  # Stop processing entirely
+                
+            except Exception as e:
+                logger.error(f"Error processing batch: {e}", exc_info=True)
+                batch_failures += 1
+                
+                if batch_failures >= max_batch_failures:
+                    logger.error(f"Stopping after {batch_failures} consecutive batch failures")
+                    break
             
             # Sleep between batches to avoid rate limiting
             if i < len(paper_batches) - 1:
