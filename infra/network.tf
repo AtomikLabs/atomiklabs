@@ -87,6 +87,19 @@ resource "aws_vpc_endpoint" "api_gateway" {
   security_group_ids  = [aws_security_group.lambda_sg.id]
   private_dns_enabled = true
   
+  # Ensure the endpoint allows all API Gateway operations
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "execute-api:*"
+        Resource  = "*"
+      }
+    ]
+  })
+  
   tags = merge(local.common_tags, {
     Name = "${local.resource_prefix}-api-gateway-endpoint"
   })

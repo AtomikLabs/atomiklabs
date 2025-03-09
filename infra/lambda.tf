@@ -215,6 +215,15 @@ resource "aws_iam_role_policy" "lambda_arxiv_api" {
       {
         Effect = "Allow"
         Action = [
+          "execute-api:Invoke"
+        ]
+        Resource = [
+          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "rds-db:connect",
           "rds:DescribeDBInstances",
           "rds:DescribeDBClusters",

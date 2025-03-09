@@ -8,6 +8,8 @@ import logging
 import time
 from typing import Dict, List, Any, Optional, Union
 import uuid
+import datetime
+import os
 
 import requests
 from requests.exceptions import RequestException
@@ -36,6 +38,9 @@ class ApiClient:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.session = requests.Session()
+        
+        # Check if we're running in AWS Lambda
+        self.is_in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
         
         # Circuit breaker state
         self._failures = 0
@@ -127,13 +132,17 @@ class ApiClient:
         retry_count = 0
         current_delay = self.retry_delay
         
-        # Handle JSON serialization issues with UUIDs
+        # Handle JSON serialization issues with UUIDs and datetimes
         if data:
             data = self._serialize_json_safe(data)
             
         while retry_count <= self.max_retries:
             try:
-                headers = {"Content-Type": "application/json"}
+                # Basic headers
+                headers = {
+                    "Content-Type": "application/json",
+                    "User-Agent": "ArxivProcessor/1.0",
+                }
                 
                 # Log the request for debugging
                 if retry_count > 0:
@@ -153,44 +162,54 @@ class ApiClient:
                 else:
                     raise ValueError(f"Unsupported HTTP method: {method}")
                 
-                # Check if we got a successful response
-                if response.status_code < 200 or response.status_code >= 300:
-                    logger.warning(
-                        f"Request failed: {method} {url} - Status: {response.status_code} - Response: {response.text}"
-                    )
-                    
-                    # Don't retry 4xx errors (except 429 Too Many Requests)
-                    if 400 <= response.status_code < 500 and response.status_code != 429:
-                        response.raise_for_status()
-                    
-                    # For 5xx errors, increment failure counter for circuit breaker
-                    if 500 <= response.status_code < 600:
-                        self._handle_failure(response.status_code)
+                # Check for HTTP errors
+                if response.status_code >= 400:
+                    # Log the response for debugging
+                    try:
+                        response_text = response.json()
+                    except ValueError:
+                        response_text = response.text
                         
-                        # If circuit breaker has opened, raise immediately
-                        if self._circuit_open:
-                            raise CircuitBreakerOpenError("Circuit breaker opened due to multiple server errors")
+                    logger.warning(f"Request failed: {method} {url} - Status: {response.status_code} - Response: {response_text}")
                     
-                    # For other error codes, retry
-                    retry_count += 1
-                    if retry_count > self.max_retries:
+                    # Handle 403 Forbidden explicitly with better error messages
+                    if response.status_code == 403:
+                        if self.is_in_lambda:
+                            logger.error("Received 403 Forbidden. This is likely an IAM permission issue.")
+                            logger.error("Check that the Lambda execution role has permission to invoke the API Gateway.")
+                            logger.error("Make sure the 'execute-api:Invoke' action is allowed for this API Gateway.")
+                        else:
+                            logger.error("Received 403 Forbidden. This may be a VPC endpoint or networking issue.")
+                            logger.error("Check your VPC endpoint configuration and security groups.")
+                    
+                    # Client errors (400-499) shouldn't be retried (except 429)
+                    if 400 <= response.status_code < 500 and response.status_code != 429:
+                        self._handle_failure(response.status_code)
+                        response.raise_for_status()  # This will raise an HTTPError
+                    
+                    # Server errors and rate limiting should be retried
+                    self._handle_failure(response.status_code)
+                    
+                    if retry_count >= self.max_retries:
                         response.raise_for_status()
-                    
+                        
+                    # For retryable errors, continue the loop
+                    retry_count += 1
+                    logger.info(f"Retrying request ({retry_count}/{self.max_retries})...")
                     time.sleep(current_delay)
                     current_delay *= 2  # Exponential backoff
                     continue
                 
-                # Success - reset circuit breaker state
+                # Parse and return the response for successful requests
                 self._handle_success()
                 
-                # Parse the response
-                if response.text:
-                    try:
-                        return response.json()
-                    except json.JSONDecodeError:
-                        logger.warning(f"Could not parse JSON response: {response.text[:100]}...")
-                        return {"raw_response": response.text}
-                return {}
+                try:
+                    return response.json()
+                except ValueError:
+                    # Return an empty dict if the response is not JSON
+                    if response.text.strip():
+                        logger.warning(f"Response is not valid JSON: {response.text}")
+                    return {}
                 
             except (requests.exceptions.ConnectTimeout, 
                     requests.exceptions.ReadTimeout,
@@ -229,7 +248,7 @@ class ApiClient:
 
     def _serialize_json_safe(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Convert data to be JSON serializable (especially UUIDs).
+        Convert data to be JSON serializable (especially UUIDs and datetimes).
         
         Args:
             data: Dictionary data to serialize
@@ -241,12 +260,16 @@ class ApiClient:
         for key, value in data.items():
             if isinstance(value, uuid.UUID):
                 result[key] = str(value)
+            elif isinstance(value, (datetime.datetime, datetime.date)):
+                result[key] = value.isoformat()
             elif isinstance(value, dict):
                 result[key] = self._serialize_json_safe(value)
             elif isinstance(value, list):
                 result[key] = [
                     self._serialize_json_safe(item) if isinstance(item, dict) else
-                    str(item) if isinstance(item, uuid.UUID) else item
+                    str(item) if isinstance(item, uuid.UUID) else
+                    item.isoformat() if isinstance(item, (datetime.datetime, datetime.date)) else
+                    item
                     for item in value
                 ]
             else:
