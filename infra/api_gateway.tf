@@ -2,6 +2,12 @@ resource "aws_api_gateway_rest_api" "main" {
   name        = "${local.resource_prefix}-api-gateway"
   description = "API Gateway for ${var.project} internal services"
 
+  # Configure as private API Gateway (only accessible via VPC endpoint)
+  endpoint_configuration {
+    types = ["PRIVATE"]
+    vpc_endpoint_ids = [aws_vpc_endpoint.api_gateway.id]
+  }
+
   # Simplified resource policy allowing access from VPC and authorized roles
   policy = jsonencode({
     Version = "2012-10-17"
