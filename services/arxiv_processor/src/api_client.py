@@ -14,6 +14,11 @@ import os
 import requests
 from requests.exceptions import RequestException
 
+# Add boto3 imports for authentication
+import boto3
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,6 +46,16 @@ class ApiClient:
         
         # Check if we're running in AWS Lambda
         self.is_in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
+        
+        # Set up AWS credentials for API Gateway authentication
+        self.region = os.environ.get('AWS_REGION', 'us-west-1')
+        self.boto_session = boto3.Session(region_name=self.region)
+        self.credentials = self.boto_session.get_credentials()
+        
+        if not self.credentials:
+            logger.warning("No AWS credentials found for API Gateway authentication")
+        else:
+            logger.info(f"AWS credentials initialized for region {self.region}")
         
         # Circuit breaker state
         self._failures = 0
@@ -143,6 +158,33 @@ class ApiClient:
                     "Content-Type": "application/json",
                     "User-Agent": "ArxivProcessor/1.0",
                 }
+                
+                # Sign the request with AWS SigV4
+                if self.credentials:
+                    logger.debug(f"Signing request to {url} with SigV4")
+                    request_data = json.dumps(data) if data else ''
+                    
+                    request = AWSRequest(
+                        method=method,
+                        url=url,
+                        data=request_data if method.upper() in ['POST', 'PUT'] else None
+                    )
+                    
+                    if params:
+                        request.params = params
+                    
+                    for key, value in headers.items():
+                        request.headers[key] = value
+                    
+                    # Execute-api is the service name for API Gateway
+                    auth = SigV4Auth(self.credentials, 'execute-api', self.region)
+                    auth.add_auth(request)
+                    
+                    # Extract signed headers for our request
+                    headers = dict(request.headers)
+                    logger.debug(f"Request signed with headers: {headers}")
+                else:
+                    logger.warning("No AWS credentials available for signing the request")
                 
                 # Log the request for debugging
                 if retry_count > 0:

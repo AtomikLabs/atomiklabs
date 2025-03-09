@@ -56,7 +56,7 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           "execute-api:Invoke"
         ]
         Resource = [
-          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*"
+          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*/*/*"
         ]
       }
     ]
@@ -103,7 +103,9 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
       name  = "arxiv-processor"
       image = "${aws_ecr_repository.daily_processor.repository_url}:arxiv"
       environment = [
-        { name = "API_ENDPOINT", value = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.region}.amazonaws.com/${var.environment}" }
+        { name = "API_ENDPOINT", value = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.region}.amazonaws.com/${var.environment}" },
+        { name = "AWS_REGION", value = var.region },
+        { name = "LOG_LEVEL", value = "DEBUG" }
       ]
       logConfiguration = {
         logDriver = "awslogs"

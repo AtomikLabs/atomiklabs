@@ -2,15 +2,51 @@ resource "aws_api_gateway_rest_api" "main" {
   name        = "${local.resource_prefix}-api-gateway"
   description = "API Gateway for ${var.project} internal services"
 
-  # Add a resource policy to allow access from anywhere (for troubleshooting)
+  # Secure resource policy allowing access only from VPC and authorized roles
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      # Allow access from within our VPC
       {
         Effect = "Allow"
         Principal = "*"
         Action = "execute-api:Invoke"
         Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:SourceVpc": data.aws_vpc.default.id
+          }
+        }
+      },
+      # Allow access from specific IAM roles
+      {
+        Effect = "Allow"
+        Principal = {
+          AWS = [
+            aws_iam_role.ecs_task_role.arn,
+            aws_iam_role.lambda_arxiv_api.arn
+          ]
+        }
+        Action = "execute-api:Invoke"
+        Resource = "*"
+      },
+      # Explicit deny for all other access
+      {
+        Effect = "Deny"
+        Principal = "*"
+        Action = "execute-api:Invoke"
+        Resource = "*"
+        Condition = {
+          StringNotEquals = {
+            "aws:SourceVpc": data.aws_vpc.default.id
+          },
+          "ForAllValues:StringNotLike": {
+            "aws:PrincipalArn": [
+              aws_iam_role.ecs_task_role.arn,
+              aws_iam_role.lambda_arxiv_api.arn
+            ]
+          }
+        }
       }
     ]
   })
@@ -213,7 +249,7 @@ resource "aws_api_gateway_method" "get_papers" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.papers.id
   http_method   = "GET"
-  authorization = "NONE"  # Use IAM, Cognito, or API key in production
+  authorization = "AWS_IAM"
 }
 
 resource "aws_api_gateway_integration" "get_papers" {
@@ -229,7 +265,7 @@ resource "aws_api_gateway_method" "get_paper" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.paper.id
   http_method   = "GET"
-  authorization = "NONE"  # Use IAM, Cognito, or API key in production
+  authorization = "AWS_IAM"
   request_parameters = {
     "method.request.path.id" = true
   }
@@ -249,7 +285,7 @@ resource "aws_api_gateway_method" "get_authors" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.authors.id
   http_method   = "GET"
-  authorization = "NONE"  # Use IAM, Cognito, or API key in production
+  authorization = "AWS_IAM"
 }
 
 resource "aws_api_gateway_integration" "get_authors" {
@@ -265,7 +301,7 @@ resource "aws_api_gateway_method" "get_author" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.author.id
   http_method   = "GET"
-  authorization = "NONE"  # Use IAM, Cognito, or API key in production
+  authorization = "AWS_IAM"
   request_parameters = {
     "method.request.path.id" = true
   }
@@ -284,7 +320,7 @@ resource "aws_api_gateway_method" "get_paper_authors" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.paper_authors.id
   http_method   = "GET"
-  authorization = "NONE"  # Use IAM, Cognito, or API key in production
+  authorization = "AWS_IAM"
   request_parameters = {
     "method.request.path.paper_id" = true
   }
@@ -304,7 +340,7 @@ resource "aws_api_gateway_method" "get_categories" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.categories.id
   http_method   = "GET"
-  authorization = "NONE"  # Use IAM, Cognito, or API key in production
+  authorization = "AWS_IAM"
 }
 
 resource "aws_api_gateway_integration" "get_categories" {
@@ -320,9 +356,9 @@ resource "aws_api_gateway_method" "get_category" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.category.id
   http_method   = "GET"
-  authorization = "NONE"  # Use IAM, Cognito, or API key in production
+  authorization = "AWS_IAM"
   request_parameters = {
-    "method.request.path.code" = true
+    "method.request.path.id" = true
   }
 }
 
@@ -340,7 +376,7 @@ resource "aws_api_gateway_method" "get_sets" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.sets.id
   http_method   = "GET"
-  authorization = "NONE"  # Use IAM, Cognito, or API key in production
+  authorization = "AWS_IAM"
 }
 
 resource "aws_api_gateway_integration" "get_sets" {
@@ -356,7 +392,7 @@ resource "aws_api_gateway_method" "get_set" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.set.id
   http_method   = "GET"
-  authorization = "NONE"  # Use IAM, Cognito, or API key in production
+  authorization = "AWS_IAM"
   request_parameters = {
     "method.request.path.id" = true
   }
@@ -375,7 +411,7 @@ resource "aws_api_gateway_method" "get_set_by_code" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.set_code.id
   http_method   = "GET"
-  authorization = "NONE"  # Use IAM, Cognito, or API key in production
+  authorization = "AWS_IAM"
   request_parameters = {
     "method.request.path.code" = true
   }
@@ -402,9 +438,9 @@ resource "aws_api_gateway_method" "get_abstract" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.paper_abstract.id
   http_method   = "GET"
-  authorization = "NONE"  # Use IAM, Cognito, or API key in production
+  authorization = "AWS_IAM"
   request_parameters = {
-    "method.request.path.id" = true
+    "method.request.path.paper_id" = true
   }
 }
 
@@ -421,9 +457,9 @@ resource "aws_api_gateway_method" "put_abstract" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.paper_abstract.id
   http_method   = "PUT"
-  authorization = "NONE"  # Use IAM, Cognito, or API key in production
+  authorization = "AWS_IAM"
   request_parameters = {
-    "method.request.path.id" = true
+    "method.request.path.paper_id" = true
   }
 }
 
@@ -440,9 +476,9 @@ resource "aws_api_gateway_method" "delete_abstract" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.paper_abstract.id
   http_method   = "DELETE"
-  authorization = "NONE"  # Use IAM, Cognito, or API key in production
+  authorization = "AWS_IAM"
   request_parameters = {
-    "method.request.path.id" = true
+    "method.request.path.paper_id" = true
   }
 }
 

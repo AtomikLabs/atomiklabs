@@ -269,8 +269,22 @@ def main():
                 time.sleep(1)
         
         # Log results
-        logger.info("ArXiv processor completed successfully")
-        logger.info(f"Results: {json.dumps(results)}")
+        if results["papers_created"] > 0 or results["papers_updated"] > 0:
+            logger.info("ArXiv processor completed successfully")
+            logger.info(f"Results: {json.dumps(results)}")
+        else:
+            if results["papers_failed"] > 0:
+                logger.error("ArXiv processor failed to process any papers successfully")
+                logger.error(f"Failed papers: {results['papers_failed']}")
+                logger.error(f"Results: {json.dumps(results)}")
+                raise Exception(f"Failed to process {results['papers_failed']} papers")
+            elif len(batches) == 0:
+                logger.warning("ArXiv processor completed with no papers to process")
+                logger.info(f"Results: {json.dumps(results)}")
+            else:
+                logger.error("ArXiv processor failed to process any papers")
+                logger.error(f"Results: {json.dumps(results)}")
+                raise Exception("No papers were processed successfully")
         
     except Exception as e:
         logger.error(f"Error in ArXiv processor: {e}", exc_info=True)
