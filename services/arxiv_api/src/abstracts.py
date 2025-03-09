@@ -28,10 +28,6 @@ get_paper_by_id = lambda paper_id: None  # Will be mocked in tests
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Get S3 bucket name from environment variable or SSM Parameter Store
-import boto3
-from botocore.exceptions import ClientError
-
 def get_s3_bucket_name() -> str:
     """
     Get the S3 bucket name from SSM Parameter Store

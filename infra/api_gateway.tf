@@ -18,6 +18,18 @@ resource "aws_api_gateway_rest_api" "main" {
           }
         }
       },
+      # Allow access from the VPC endpoint
+      {
+        Effect = "Allow"
+        Principal = "*"
+        Action = "execute-api:Invoke"
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:SourceVpce": aws_vpc_endpoint.api_gateway.id
+          }
+        }
+      },
       # Allow access from specific IAM roles
       {
         Effect = "Allow"

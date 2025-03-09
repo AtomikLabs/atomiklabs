@@ -58,6 +58,16 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
         Resource = [
           "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*/*/*"
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeVpcEndpoints",
+          "ec2:DescribeRouteTables",
+          "ec2:CreateRoute",
+          "ec2:DeleteRoute"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -103,7 +113,7 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
       name  = "arxiv-processor"
       image = "${aws_ecr_repository.daily_processor.repository_url}:arxiv"
       environment = [
-        { name = "API_ENDPOINT", value = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.region}.amazonaws.com/${var.environment}" },
+        { name = "API_ENDPOINT", value = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.region}.vpce.amazonaws.com/${var.environment}" },
         { name = "AWS_REGION", value = var.region },
         { name = "LOG_LEVEL", value = "DEBUG" }
       ]
@@ -117,4 +127,26 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
       }
     }
   ])
+}
+
+# Create CloudWatch log group for ECS task
+resource "aws_cloudwatch_log_group" "arxiv_processor" {
+  name              = "/ecs/${local.resource_prefix}-arxiv-processor-${local.resource_suffix}"
+  retention_in_days = 30
+}
+
+# Create ECS service to run the task
+resource "aws_ecs_service" "arxiv_processor" {
+  name            = "${local.resource_prefix}-arxiv-processor-${local.resource_suffix}"
+  cluster         = aws_ecs_cluster.arxiv.id
+  task_definition = aws_ecs_task_definition.arxiv_processor.arn
+  desired_count   = 0  # Set to 0 initially, will be triggered by EventBridge
+  launch_type     = "FARGATE"
+
+  # Configure network settings to use the VPC
+  network_configuration {
+    subnets          = data.aws_subnets.default.ids
+    security_groups  = [aws_security_group.ecs_tasks.id]
+    assign_public_ip = false  # Ensure tasks use private IPs only to route through VPC endpoints
+  }
 } 

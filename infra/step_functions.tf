@@ -85,7 +85,7 @@ resource "aws_sfn_state_machine" "daily_processor" {
             AwsvpcConfiguration = {
               Subnets = data.aws_subnets.default.ids
               SecurityGroups = [aws_security_group.ecs_tasks.id]
-              AssignPublicIp = "ENABLED"
+              AssignPublicIp = "DISABLED"
             }
           }
         }

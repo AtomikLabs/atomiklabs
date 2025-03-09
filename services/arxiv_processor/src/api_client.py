@@ -10,6 +10,8 @@ from typing import Dict, List, Any, Optional, Union
 import uuid
 import datetime
 import os
+from urllib.parse import urlparse, urlencode
+from datetime import datetime
 
 import requests
 from requests.exceptions import RequestException
@@ -44,26 +46,26 @@ class ApiClient:
         self.retry_delay = retry_delay
         self.session = requests.Session()
         
-        # Check if we're running in AWS Lambda
-        self.is_in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
-        
         # Set up AWS credentials for API Gateway authentication
         self.region = os.environ.get('AWS_REGION', 'us-west-1')
         
         # Configure boto3 with explicit credential lookup
-        # This ensures we use container credentials when available
         self.boto_session = boto3.Session(region_name=self.region)
         self.credentials = self.boto_session.get_credentials()
         
         # Log credential information (safely)
         if self.credentials:
             cred_type = self.credentials.__class__.__name__
-            access_key_preview = f"...{self.credentials.access_key[-4:]}" if hasattr(self.credentials, "access_key") else "None"
+            access_key_preview = "..." + str(self.credentials.access_key)[-4:] if hasattr(self.credentials, "access_key") else "None"
             logger.info(f"AWS credentials initialized for region {self.region} (Type: {cred_type}, Key: {access_key_preview})")
             
             # Check if we're running with task credentials
             if 'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI' in os.environ:
                 logger.info("Running with ECS task credentials")
+                
+            # Verify credentials are valid
+            if not self.credentials.get_frozen_credentials().access_key:
+                logger.error("Credentials found but access key is empty")
         else:
             logger.warning("No AWS credentials found for API Gateway authentication")
         
@@ -72,7 +74,7 @@ class ApiClient:
         self._failure_threshold = 5
         self._circuit_open = False
         self._last_failure_time = 0
-        self._circuit_reset_timeout = 30  # Reduced from 60 to 30 seconds for faster recovery
+        self._circuit_reset_timeout = 30  # 30 seconds for recovery
         self._half_open_success = 0
         self._half_open_required_successes = 3  # Require 3 successful requests to close the circuit
     
@@ -152,168 +154,147 @@ class ApiClient:
         # Check if circuit breaker is open
         if not self._check_circuit():
             raise CircuitBreakerOpenError("Circuit breaker is open, API is not responsive")
-            
+
+        # Build the base URL
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        
+        # Build query string if we have params
+        query_string = ''
+        if params:
+            query_string = urlencode(params)
+            
+        # Complete URL including query string
+        full_url = url
+        if query_string:
+            full_url = f"{url}?{query_string}"
+            
+        # Handle JSON serialization for request body
+        request_body = None
+        if data and method.upper() in ['POST', 'PUT']:
+            data = self._serialize_json_safe(data)
+            request_body = json.dumps(data)
+        
         retry_count = 0
         current_delay = self.retry_delay
         
-        # Handle JSON serialization issues with UUIDs and datetimes
-        if data:
-            data = self._serialize_json_safe(data)
-            
         while retry_count <= self.max_retries:
             try:
-                # Prepare the request
-                request_data = json.dumps(data) if data and method.upper() in ['POST', 'PUT'] else ''
-                
-                # Parse the URL to get host and path
-                from urllib.parse import urlparse, urlencode
+                # Extract host from URL for the Host header
                 parsed_url = urlparse(url)
                 host = parsed_url.netloc
-                path = parsed_url.path
-                if not path:
-                    path = '/'
                 
-                # Basic headers
+                # Basic headers required for all requests
                 headers = {
                     "Content-Type": "application/json",
                     "User-Agent": "ArxivProcessor/1.0",
-                    "Host": host  # Required for SigV4 authentication
+                    "Host": host,  # Required for SigV4
+                    "X-Amz-Date": datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')  # Required for SigV4
                 }
                 
-                # Sign the request with AWS SigV4
+                # Sign the request with AWS SigV4 if we have credentials
                 if self.credentials:
                     try:
-                        logger.debug(f"Signing request to {url} with SigV4")
+                        logger.debug(f"Signing request: {method} {full_url}")
                         
-                        # Build query string
-                        query_string = ''
-                        if params:
-                            query_string = urlencode(params)
-                        
-                        # Create a proper AWS request with the same URL that will be used in the request
-                        request_url = url
-                        if query_string:
-                            request_url = f"{url}?{query_string}"
-                        
+                        # Create AWS request with the EXACT same URL we'll use for the actual request
                         aws_request = AWSRequest(
                             method=method,
-                            url=request_url,
+                            url=full_url,
                             headers=headers,
-                            data=request_data if method.upper() in ['POST', 'PUT'] else None
+                            data=request_body
                         )
-                        
-                        # Log request details for debugging
-                        logger.debug(f"Request URL: {request_url}")
-                        logger.debug(f"Headers before signing: {headers}")
                         
                         # Sign the request
                         auth = SigV4Auth(self.credentials, 'execute-api', self.region)
                         auth.add_auth(aws_request)
                         
-                        # Extract signed headers for our request
-                        headers = dict(aws_request.headers)
+                        # Get the signed headers
+                        signed_headers = dict(aws_request.headers)
                         
-                        # Ensure all header values are strings
-                        for key, value in headers.items():
-                            headers[key] = str(value)
+                        # Log headers for debugging (safely redacting sensitive info)
+                        safe_headers = {k: v for k, v in signed_headers.items() 
+                                      if k.lower() not in ('authorization', 'x-amz-security-token')}
+                        logger.debug(f"Signed headers: {safe_headers}")
                         
-                        logger.debug(f"Headers after signing: {headers}")
+                        # Make the request with the signed headers and full URL 
+                        # CRITICAL: Use the exact same URL and headers that were used for signing
+                        response = requests.request(
+                            method=method,
+                            url=full_url,  # Use the full URL with query params
+                            headers=signed_headers,  # Use the signed headers
+                            data=request_body,  # Body is already prepared
+                            timeout=10
+                        )
                     except Exception as e:
-                        logger.error(f"Error signing request: {e}", exc_info=True)
-                        # Continue with unsigned request if signing fails
+                        logger.error(f"Error signing request: {str(e)}", exc_info=True)
+                        raise  # Fail if we can't sign - don't continue with unsigned request
                 else:
-                    logger.warning("No AWS credentials available for signing the request")
+                    logger.warning("No AWS credentials available - request will fail for AWS_IAM auth")
+                    # Make unsigned request
+                    response = requests.request(
+                        method=method,
+                        url=full_url,
+                        headers=headers,
+                        data=request_body,
+                        timeout=10
+                    )
                 
-                # Log the request for debugging
-                if retry_count > 0:
-                    logger.debug(f"Retry {retry_count}/{self.max_retries}: {method} {url}")
-                else:
-                    logger.debug(f"Request: {method} {url}")
+                # Handle the response
+                if response.status_code < 400:
+                    # Success - handle circuit breaker state
+                    self._handle_success()
                     
-                # Make the request
-                if method.upper() == 'GET':
-                    response = self.session.get(url, params=params, headers=headers, timeout=10)
-                elif method.upper() == 'POST':
-                    response = self.session.post(url, json=data, headers=headers, timeout=10)
-                elif method.upper() == 'PUT':
-                    response = self.session.put(url, json=data, headers=headers, timeout=10)
-                elif method.upper() == 'DELETE':
-                    response = self.session.delete(url, headers=headers, timeout=10)
-                else:
-                    raise ValueError(f"Unsupported HTTP method: {method}")
-                
-                # Check for HTTP errors
-                if response.status_code >= 400:
-                    # Log the response for debugging
+                    # Parse JSON response
                     try:
-                        response_text = response.json()
+                        return response.json()
                     except ValueError:
-                        response_text = response.text
-                        
-                    logger.warning(f"Request failed: {method} {url} - Status: {response.status_code} - Response: {response_text}")
+                        if response.text.strip():
+                            logger.warning(f"Response is not valid JSON: {response.text[:100]}")
+                        return {"message": response.text or "Empty response"}
+                else:
+                    # Log detailed error information
+                    log_prefix = f"Request failed: {method} {full_url}"
+                    logger.warning(f"{log_prefix} - Status: {response.status_code}")
                     
-                    # Log more details about the request for debugging
-                    logger.debug(f"Request headers: {headers}")
-                    logger.debug(f"Request URL: {url}" + (f"?{urlencode(params)}" if params else ""))
+                    try:
+                        error_body = response.json()
+                        logger.warning(f"Response body: {error_body}")
+                    except:
+                        logger.warning(f"Response text: {response.text[:200]}")
                     
-                    # Handle 403 Forbidden explicitly with better error messages
+                    # Handle specific error cases
                     if response.status_code == 403:
-                        logger.error("Received 403 Forbidden. This could be an authentication issue.")
-                        logger.error("Verify that:")
-                        logger.error("1. The IAM role has execute-api:Invoke permission")
-                        logger.error("2. The API Gateway resource policy allows access")
-                        logger.error("3. The Host header is correct")
-                        logger.error("4. The Authorization header is properly formatted")
-                        logger.error("5. The AWS credentials are valid")
-                        
-                        # Log headers that were sent (carefully redact sensitive info)
-                        safe_headers = headers.copy()
-                        if 'Authorization' in safe_headers:
-                            auth_parts = safe_headers['Authorization'].split(' ')
-                            if len(auth_parts) > 1:
-                                safe_headers['Authorization'] = f"{auth_parts[0]} Credential={auth_parts[1].split('/')[0]}/... Signature=..."
-                        logger.error(f"Headers sent: {safe_headers}")
+                        logger.error("403 Forbidden - Authentication error")
+                        logger.error(f"Request URL: {full_url}")
+                        logger.error(f"Authorization header present: {'Authorization' in response.request.headers}")
+                        logger.error(f"Check IAM permissions and API Gateway configuration")
                     
-                    # Client errors (400-499) shouldn't be retried (except 429)
-                    if 400 <= response.status_code < 500 and response.status_code != 429:
-                        self._handle_failure(response.status_code)
-                        response.raise_for_status()  # This will raise an HTTPError
-                    
-                    # Server errors and rate limiting should be retried
+                    # Update circuit breaker state
                     self._handle_failure(response.status_code)
                     
-                    if retry_count >= self.max_retries:
-                        response.raise_for_status()
+                    # Client errors (except 429) shouldn't be retried
+                    if 400 <= response.status_code < 500 and response.status_code != 429:
+                        if retry_count >= self.max_retries:
+                            response.raise_for_status()
+                    else:
+                        # Server errors and rate limiting should be retried
+                        if retry_count >= self.max_retries:
+                            response.raise_for_status()
                         
-                    # For retryable errors, continue the loop
-                    retry_count += 1
-                    logger.info(f"Retrying request ({retry_count}/{self.max_retries})...")
-                    time.sleep(current_delay)
-                    current_delay *= 2  # Exponential backoff
-                    continue
-                
-                # Parse and return the response for successful requests
-                self._handle_success()
-                
-                try:
-                    return response.json()
-                except ValueError:
-                    # Return an empty dict if the response is not JSON
-                    if response.text.strip():
-                        logger.warning(f"Response is not valid JSON: {response.text}")
-                    return {}
-                
-            except (requests.exceptions.ConnectTimeout, 
-                    requests.exceptions.ReadTimeout,
-                    requests.exceptions.ConnectionError) as e:
-                # Network-level errors
-                logger.error(f"Network error: {e}")
+                        # Sleep and retry
+                        retry_count += 1
+                        logger.info(f"Retrying request ({retry_count}/{self.max_retries})...")
+                        time.sleep(current_delay)
+                        current_delay *= 2  # Exponential backoff
+                        continue
+                        
+                    # For non-retryable errors, break the loop and raise the exception
+                    response.raise_for_status()
+            
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                # Network errors
+                logger.error(f"Network error: {str(e)}")
                 self._handle_failure()
-                
-                # If circuit breaker has opened, raise immediately  
-                if self._circuit_open:
-                    raise CircuitBreakerOpenError("Circuit breaker opened due to network errors")
                 
                 retry_count += 1
                 if retry_count > self.max_retries:
@@ -322,14 +303,11 @@ class ApiClient:
                 logger.info(f"Retrying request ({retry_count}/{self.max_retries})...")
                 time.sleep(current_delay)
                 current_delay *= 2  # Exponential backoff
+                
             except RequestException as e:
                 # Other request errors
-                logger.error(f"Request error: {e}")
+                logger.error(f"Request error: {str(e)}")
                 self._handle_failure()
-                
-                # If circuit breaker has opened, raise immediately
-                if self._circuit_open:
-                    raise CircuitBreakerOpenError("Circuit breaker opened due to multiple failures")
                 
                 retry_count += 1
                 if retry_count > self.max_retries:
