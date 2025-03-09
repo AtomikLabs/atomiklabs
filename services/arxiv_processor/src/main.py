@@ -14,6 +14,8 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime, UTC, timedelta
 import uuid
 import requests
+import boto3
+from botocore.session import Session
 
 # Change relative imports to absolute imports
 from config import load_config
@@ -197,6 +199,26 @@ def main():
         
         # 5. Verify API connectivity before starting batch processing
         try:
+            # Log AWS credentials information for debugging
+            boto_session = boto3.Session(region_name=os.environ.get('AWS_REGION', 'us-west-1'))
+            credentials = boto_session.get_credentials()
+            
+            if credentials:
+                # Don't log actual credentials, just confirm they exist
+                logger.info(f"AWS credentials found: Access Key ID ending in '...{credentials.access_key[-4:]}'")
+                logger.info(f"Using region: {boto_session.region_name}")
+                logger.info(f"Credential provider: {boto_session.get_credentials().__class__.__name__}")
+                
+                # Check if we're running with task credentials
+                if 'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI' in os.environ:
+                    logger.info("Running with ECS task credentials")
+                elif 'AWS_WEB_IDENTITY_TOKEN_FILE' in os.environ:
+                    logger.info("Running with web identity credentials")
+                else:
+                    logger.info("Running with regular credentials")
+            else:
+                logger.warning("No AWS credentials found! This will cause 403 errors with AWS_IAM authorization.")
+            
             # Simple test request to see if the API is accessible
             response = api_client._make_request('GET', 'papers', params={"limit": 1})
             logger.info("API connectivity test successful")

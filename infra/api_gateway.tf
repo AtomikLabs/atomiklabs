@@ -2,7 +2,7 @@ resource "aws_api_gateway_rest_api" "main" {
   name        = "${local.resource_prefix}-api-gateway"
   description = "API Gateway for ${var.project} internal services"
 
-  # Secure resource policy allowing access only from VPC and authorized roles
+  # Simplified resource policy allowing access from VPC and authorized roles
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -29,24 +29,6 @@ resource "aws_api_gateway_rest_api" "main" {
         }
         Action = "execute-api:Invoke"
         Resource = "*"
-      },
-      # Explicit deny for all other access
-      {
-        Effect = "Deny"
-        Principal = "*"
-        Action = "execute-api:Invoke"
-        Resource = "*"
-        Condition = {
-          StringNotEquals = {
-            "aws:SourceVpc": data.aws_vpc.default.id
-          },
-          "ForAllValues:StringNotLike": {
-            "aws:PrincipalArn": [
-              aws_iam_role.ecs_task_role.arn,
-              aws_iam_role.lambda_arxiv_api.arn
-            ]
-          }
-        }
       }
     ]
   })

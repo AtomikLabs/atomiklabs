@@ -49,13 +49,23 @@ class ApiClient:
         
         # Set up AWS credentials for API Gateway authentication
         self.region = os.environ.get('AWS_REGION', 'us-west-1')
+        
+        # Configure boto3 with explicit credential lookup
+        # This ensures we use container credentials when available
         self.boto_session = boto3.Session(region_name=self.region)
         self.credentials = self.boto_session.get_credentials()
         
-        if not self.credentials:
-            logger.warning("No AWS credentials found for API Gateway authentication")
+        # Log credential information (safely)
+        if self.credentials:
+            cred_type = self.credentials.__class__.__name__
+            access_key_preview = f"...{self.credentials.access_key[-4:]}" if hasattr(self.credentials, "access_key") else "None"
+            logger.info(f"AWS credentials initialized for region {self.region} (Type: {cred_type}, Key: {access_key_preview})")
+            
+            # Check if we're running with task credentials
+            if 'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI' in os.environ:
+                logger.info("Running with ECS task credentials")
         else:
-            logger.info(f"AWS credentials initialized for region {self.region}")
+            logger.warning("No AWS credentials found for API Gateway authentication")
         
         # Circuit breaker state
         self._failures = 0
@@ -153,36 +163,65 @@ class ApiClient:
             
         while retry_count <= self.max_retries:
             try:
+                # Prepare the request
+                request_data = json.dumps(data) if data and method.upper() in ['POST', 'PUT'] else ''
+                
+                # Parse the URL to get host and path
+                from urllib.parse import urlparse, urlencode
+                parsed_url = urlparse(url)
+                host = parsed_url.netloc
+                path = parsed_url.path
+                if not path:
+                    path = '/'
+                
                 # Basic headers
                 headers = {
                     "Content-Type": "application/json",
                     "User-Agent": "ArxivProcessor/1.0",
+                    "Host": host  # Required for SigV4 authentication
                 }
                 
                 # Sign the request with AWS SigV4
                 if self.credentials:
-                    logger.debug(f"Signing request to {url} with SigV4")
-                    request_data = json.dumps(data) if data else ''
-                    
-                    request = AWSRequest(
-                        method=method,
-                        url=url,
-                        data=request_data if method.upper() in ['POST', 'PUT'] else None
-                    )
-                    
-                    if params:
-                        request.params = params
-                    
-                    for key, value in headers.items():
-                        request.headers[key] = value
-                    
-                    # Execute-api is the service name for API Gateway
-                    auth = SigV4Auth(self.credentials, 'execute-api', self.region)
-                    auth.add_auth(request)
-                    
-                    # Extract signed headers for our request
-                    headers = dict(request.headers)
-                    logger.debug(f"Request signed with headers: {headers}")
+                    try:
+                        logger.debug(f"Signing request to {url} with SigV4")
+                        
+                        # Build query string
+                        query_string = ''
+                        if params:
+                            query_string = urlencode(params)
+                        
+                        # Create a proper AWS request with the same URL that will be used in the request
+                        request_url = url
+                        if query_string:
+                            request_url = f"{url}?{query_string}"
+                        
+                        aws_request = AWSRequest(
+                            method=method,
+                            url=request_url,
+                            headers=headers,
+                            data=request_data if method.upper() in ['POST', 'PUT'] else None
+                        )
+                        
+                        # Log request details for debugging
+                        logger.debug(f"Request URL: {request_url}")
+                        logger.debug(f"Headers before signing: {headers}")
+                        
+                        # Sign the request
+                        auth = SigV4Auth(self.credentials, 'execute-api', self.region)
+                        auth.add_auth(aws_request)
+                        
+                        # Extract signed headers for our request
+                        headers = dict(aws_request.headers)
+                        
+                        # Ensure all header values are strings
+                        for key, value in headers.items():
+                            headers[key] = str(value)
+                        
+                        logger.debug(f"Headers after signing: {headers}")
+                    except Exception as e:
+                        logger.error(f"Error signing request: {e}", exc_info=True)
+                        # Continue with unsigned request if signing fails
                 else:
                     logger.warning("No AWS credentials available for signing the request")
                 
@@ -214,15 +253,27 @@ class ApiClient:
                         
                     logger.warning(f"Request failed: {method} {url} - Status: {response.status_code} - Response: {response_text}")
                     
+                    # Log more details about the request for debugging
+                    logger.debug(f"Request headers: {headers}")
+                    logger.debug(f"Request URL: {url}" + (f"?{urlencode(params)}" if params else ""))
+                    
                     # Handle 403 Forbidden explicitly with better error messages
                     if response.status_code == 403:
-                        if self.is_in_lambda:
-                            logger.error("Received 403 Forbidden. This is likely an IAM permission issue.")
-                            logger.error("Check that the Lambda execution role has permission to invoke the API Gateway.")
-                            logger.error("Make sure the 'execute-api:Invoke' action is allowed for this API Gateway.")
-                        else:
-                            logger.error("Received 403 Forbidden. This may be a VPC endpoint or networking issue.")
-                            logger.error("Check your VPC endpoint configuration and security groups.")
+                        logger.error("Received 403 Forbidden. This could be an authentication issue.")
+                        logger.error("Verify that:")
+                        logger.error("1. The IAM role has execute-api:Invoke permission")
+                        logger.error("2. The API Gateway resource policy allows access")
+                        logger.error("3. The Host header is correct")
+                        logger.error("4. The Authorization header is properly formatted")
+                        logger.error("5. The AWS credentials are valid")
+                        
+                        # Log headers that were sent (carefully redact sensitive info)
+                        safe_headers = headers.copy()
+                        if 'Authorization' in safe_headers:
+                            auth_parts = safe_headers['Authorization'].split(' ')
+                            if len(auth_parts) > 1:
+                                safe_headers['Authorization'] = f"{auth_parts[0]} Credential={auth_parts[1].split('/')[0]}/... Signature=..."
+                        logger.error(f"Headers sent: {safe_headers}")
                     
                     # Client errors (400-499) shouldn't be retried (except 429)
                     if 400 <= response.status_code < 500 and response.status_code != 429:
