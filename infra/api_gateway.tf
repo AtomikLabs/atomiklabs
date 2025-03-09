@@ -534,6 +534,21 @@ resource "aws_api_gateway_stage" "main" {
   deployment_id = aws_api_gateway_deployment.main.id
   rest_api_id   = aws_api_gateway_rest_api.main.id
   stage_name    = var.environment
+  
+  # Enable X-Ray tracing
+  xray_tracing_enabled = true
+
+  # Add cache configuration
+  cache_cluster_enabled = false
+  
+  # Configure stage variables
+  variables = {
+    deployed_at = timestamp()
+  }
+  
+  # Set stage settings
+  cache_cluster_size    = null  # Set to 0.5, 1.6, 13.5, etc. if cache_cluster_enabled = true
+  documentation_version = null  # Set if using API documentation
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_gateway.arn
@@ -548,6 +563,9 @@ resource "aws_api_gateway_stage" "main" {
       responseLength = "$context.responseLength"
       integrationLatency = "$context.integrationLatency"
       responseLatency = "$context.responseLatency"
+      errorMessage   = "$context.error.message"  # Added error message
+      errorType      = "$context.error.responseType"  # Added error type
+      authorizationType = "$context.authorizer.type"  # Added authorizer information
     })
   }
 
@@ -557,4 +575,20 @@ resource "aws_api_gateway_stage" "main" {
       Name = "${local.resource_prefix}-api-gateway-${var.environment}-stage"
     }
   )
+}
+
+# Add method settings to enable detailed metrics
+resource "aws_api_gateway_method_settings" "all" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  stage_name  = aws_api_gateway_stage.main.stage_name
+  method_path = "*/*"
+
+  settings {
+    metrics_enabled        = true
+    logging_level          = "INFO"  # Set to ERROR, INFO, or DEBUG
+    data_trace_enabled     = true    # Enable request/response logging
+    throttling_rate_limit  = 100     # Limit the number of requests per second
+    throttling_burst_limit = 50      # Limit the number of concurrent requests
+    caching_enabled        = false   # Enable caching
+  }
 } 

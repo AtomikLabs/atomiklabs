@@ -91,6 +91,24 @@ resource "aws_security_group" "lambda_sg" {
   name        = "${local.resource_prefix}-lambda-sg-${local.resource_suffix}"
   description = "Security group for Lambda functions to access RDS"
   vpc_id      = data.aws_vpc.default.id
+  
+  # Allow all traffic within the security group itself
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    self        = true
+    description = "Allow traffic between resources using this security group"
+  }
+
+  # Allow HTTPS inbound for API Gateway invocation
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTPS inbound for API Gateway"
+  }
 
   egress {
     from_port   = 0

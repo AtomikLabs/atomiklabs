@@ -58,40 +58,73 @@ def process_batch(
     # Process each paper
     for paper in batch_data["papers"]:
         try:
+            # Convert model to dict and ensure UUIDs are properly serialized
             paper_dict = paper.model_dump()
             
-            # Convert UUID objects to strings to ensure JSON serialization works
-            for key, value in paper_dict.items():
-                if isinstance(value, uuid.UUID):
-                    paper_dict[key] = str(value)
-                    
+            # The API client now handles UUID serialization, so we don't need to do it here anymore
             arxiv_id = paper_dict["arxiv_identifier"]
             
             # Check if paper exists
-            exists = api_client.check_paper_exists(arxiv_id)
-            
+            try:
+                exists = api_client.check_paper_exists(arxiv_id)
+            except CircuitBreakerOpenError as e:
+                logger.error(f"API circuit breaker open: {e}")
+                raise  # Re-raise to be handled by the main loop
+            except Exception as e:
+                logger.error(f"Error checking if paper exists: {e}")
+                results["papers_failed"] += 1
+                continue
+                
             if exists:
                 # Get the paper ID
-                paper_id = api_client.get_paper_id(arxiv_id)
+                try:
+                    paper_id = api_client.get_paper_id(arxiv_id)
+                except CircuitBreakerOpenError as e:
+                    logger.error(f"API circuit breaker open: {e}")
+                    raise  # Re-raise to be handled by the main loop
+                except Exception as e:
+                    logger.error(f"Error getting paper ID: {e}")
+                    results["papers_failed"] += 1
+                    continue
+                    
                 if paper_id:
                     # Update paper
-                    api_client.update_paper(paper_id, paper_dict)
-                    results["papers_updated"] += 1
-                    logger.info(f"Updated paper: {arxiv_id}")
+                    try:
+                        api_client.update_paper(paper_id, paper_dict)
+                        results["papers_updated"] += 1
+                        logger.info(f"Updated paper: {arxiv_id}")
+                    except CircuitBreakerOpenError as e:
+                        logger.error(f"API circuit breaker open: {e}")
+                        raise  # Re-raise to be handled by the main loop
+                    except Exception as e:
+                        logger.error(f"Error updating paper: {e}")
+                        results["papers_failed"] += 1
+                        continue
                 else:
                     # This shouldn't happen, but just in case
                     logger.error(f"Paper exists but ID not found: {arxiv_id}")
                     results["papers_failed"] += 1
+                    continue
             else:
                 # Create new paper
-                response = api_client.create_paper(paper_dict)
-                if response and 'paper_id' in response:
-                    results["papers_created"] += 1
-                    logger.info(f"Created paper: {arxiv_id}")
-                else:
-                    logger.error(f"Failed to create paper: {arxiv_id}")
+                try:
+                    response = api_client.create_paper(paper_dict)
+                    if response and 'paper_id' in response:
+                        results["papers_created"] += 1
+                        logger.info(f"Created paper: {arxiv_id}")
+                        # Use the paper_id from the response
+                        paper_id = response['paper_id']
+                    else:
+                        logger.error(f"Failed to create paper: {arxiv_id} - Invalid response: {response}")
+                        results["papers_failed"] += 1
+                        continue  # Skip abstract upload if paper creation failed
+                except CircuitBreakerOpenError as e:
+                    logger.error(f"API circuit breaker open: {e}")
+                    raise  # Re-raise to be handled by the main loop
+                except Exception as e:
+                    logger.error(f"Error creating paper: {e}")
                     results["papers_failed"] += 1
-                    continue  # Skip abstract upload if paper creation failed
+                    continue
             
             # Find the abstract for this paper
             paper_id_str = str(paper.paper_id)
@@ -108,11 +141,17 @@ def process_batch(
                     if exists:
                         paper_id = api_client.get_paper_id(arxiv_id)
                         api_client.update_paper(paper_id, paper_dict)
-                    
+                        
+                except CircuitBreakerOpenError as e:
+                    logger.error(f"API circuit breaker open: {e}")
+                    raise  # Re-raise to be handled by the main loop
                 except Exception as e:
                     logger.error(f"Error uploading abstract: {e}")
                     results["abstracts_failed"] += 1
         
+        except CircuitBreakerOpenError as e:
+            # Re-raise circuit breaker errors to be handled by the main loop
+            raise
         except Exception as e:
             logger.error(f"Error processing paper: {e}")
             results["papers_failed"] += 1

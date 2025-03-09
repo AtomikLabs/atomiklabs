@@ -62,4 +62,32 @@ resource "aws_vpc_endpoint" "ses" {
   tags = merge(local.common_tags, {
     Name = "${local.resource_prefix}-ses-endpoint"
   })
+}
+
+# Lambda VPC Endpoint (Interface type)
+resource "aws_vpc_endpoint" "lambda" {
+  vpc_id              = data.aws_vpc.default.id
+  service_name        = "com.amazonaws.${var.region}.lambda"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = data.aws_subnets.default.ids
+  security_group_ids  = [aws_security_group.lambda_sg.id]
+  private_dns_enabled = true
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-lambda-endpoint"
+  })
+}
+
+# API Gateway VPC Endpoint (Interface type)
+resource "aws_vpc_endpoint" "api_gateway" {
+  vpc_id              = data.aws_vpc.default.id
+  service_name        = "com.amazonaws.${var.region}.execute-api"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = data.aws_subnets.default.ids
+  security_group_ids  = [aws_security_group.lambda_sg.id]
+  private_dns_enabled = true
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-api-gateway-endpoint"
+  })
 } 

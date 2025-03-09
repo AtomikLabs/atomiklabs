@@ -132,8 +132,8 @@ resource "aws_lambda_function" "arxiv_api" {
   handler         = "index.lambda_handler"
   source_code_hash = filebase64sha256("${path.module}/build/arxiv_api.zip")
   runtime         = "python3.11"
-  timeout         = 30
-  memory_size     = 256
+  timeout         = 60
+  memory_size     = 512
   
   # Add the shared layer to the function
   layers          = [aws_lambda_layer_version.shared_layer.arn]
@@ -153,6 +153,10 @@ resource "aws_lambda_function" "arxiv_api" {
       DB_NAME = aws_db_instance.postgresql.db_name
       DB_USER = aws_db_instance.postgresql.username
       DB_PASSWORD_PARAM = aws_ssm_parameter.db_password.name
+      # Add logging configuration
+      LOG_LEVEL = "INFO"
+      POWERTOOLS_SERVICE_NAME = "arxiv-api"
+      POWERTOOLS_METRICS_NAMESPACE = "ArxivAPI"
     }
   }
 
@@ -189,7 +193,9 @@ resource "aws_iam_role_policy" "lambda_arxiv_api" {
         ]
         Resource = [
           aws_ssm_parameter.s3_bucket.arn,
-          aws_ssm_parameter.arxiv_back_date.arn
+          aws_ssm_parameter.arxiv_back_date.arn,
+          aws_ssm_parameter.email_recipients.arn,
+          aws_ssm_parameter.db_password.arn
         ]
       },
       {
