@@ -29,13 +29,18 @@ output "postgresql_password_param" {
 }
 
 output "api_gateway_url" {
-  description = "The URL of the API Gateway"
+  description = "The URL of the API Gateway (only accessible from within VPC via endpoint)"
   value       = "${aws_api_gateway_deployment.main.invoke_url}${aws_api_gateway_stage.main.stage_name}/"
 }
 
 output "api_gateway_id" {
   description = "The ID of the API Gateway REST API"
   value       = aws_api_gateway_rest_api.main.id
+}
+
+output "api_gateway_vpc_endpoint_id" {
+  description = "The ID of the VPC endpoint for API Gateway"
+  value       = aws_vpc_endpoint.api_gateway.id
 }
 
 output "api_lambda_function_name" {
