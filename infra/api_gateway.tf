@@ -2,6 +2,24 @@ resource "aws_api_gateway_rest_api" "main" {
   name        = "${local.resource_prefix}-api-gateway"
   description = "API Gateway for ${var.project} internal services"
 
+  # Add a resource policy to allow access from VPC endpoints
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = "*"
+        Action = "execute-api:Invoke"
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:SourceVpc": data.aws_vpc.default.id
+          }
+        }
+      }
+    ]
+  })
+
   tags = merge(
     local.common_tags,
     {
