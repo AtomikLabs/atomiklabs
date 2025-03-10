@@ -647,3 +647,18 @@ This document outlines the step-by-step plan to address the infrastructure limit
       - `aws_vpc_endpoint.api_gateway`
   - This ensures that all resources are deployed in the custom VPC and not in the default VPC
   - The data source `data.aws_vpc.default` still references the custom VPC, but now all resources directly reference `aws_vpc.main.id` for clarity
+
+- Fixed resource dependency issues:
+  - Added local variables for database connection details to avoid direct references to the RDS instance:
+    - Created `locals` block with `db_host`, `db_port`, `db_name`, and `db_username` variables
+    - Updated Lambda functions to use these local variables instead of directly referencing the RDS instance
+    - This breaks the direct dependency between Lambda functions and the RDS instance
+  - Added `lifecycle { create_before_destroy = true }` to all security groups:
+    - `aws_security_group.postgresql`
+    - `aws_security_group.lambda_sg`
+    - `aws_security_group.vpc_endpoints`
+    - `aws_security_group.ecs_tasks`
+    - This ensures that new security groups are created before old ones are destroyed
+    - This helps prevent issues with resources still using the security groups during updates
+  - These changes help resolve errors related to ENI detachment and subnet group deletion
+  - The approach ensures a cleaner deployment and update process with fewer dependency issues

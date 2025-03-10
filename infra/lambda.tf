@@ -1,3 +1,11 @@
+locals {
+  # Database connection details
+  db_host     = "atomiklabs-dev-db-custom.cluster-xxxxxxxxx.region.rds.amazonaws.com"
+  db_port     = 5432
+  db_name     = "atomiklabs"
+  db_username = "dbadmin"
+}
+
 resource "aws_lambda_function" "mailer" {
   filename         = "${path.module}/build/mailer.zip"
   function_name    = "${local.resource_prefix}-mailer-${local.resource_suffix}"
@@ -20,16 +28,21 @@ resource "aws_lambda_function" "mailer" {
     variables = {
       CONFIG_PATH = "/${var.project}/${var.environment}"
       DEPLOY_TIMESTAMP = timestamp()
-      # Add database connection info
-      DB_HOST = aws_db_instance.postgresql.address
-      DB_PORT = aws_db_instance.postgresql.port
-      DB_NAME = aws_db_instance.postgresql.db_name
-      DB_USER = aws_db_instance.postgresql.username
+      # Use local variables for database connection info to avoid direct references
+      DB_HOST = local.db_host
+      DB_PORT = local.db_port
+      DB_NAME = local.db_name
+      DB_USER = local.db_username
       DB_PASSWORD_PARAM = aws_ssm_parameter.db_password.name
     }
   }
 
   tags = local.common_tags
+  
+  # Add a lifecycle rule to create the new Lambda before destroying the old one
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_iam_role" "lambda_mailer" {
@@ -147,11 +160,11 @@ resource "aws_lambda_function" "arxiv_api" {
     variables = {
       CONFIG_PATH = "/${var.project}/${var.environment}"
       DEPLOY_TIMESTAMP = timestamp()
-      # Database connection info
-      DB_HOST = aws_db_instance.postgresql.address
-      DB_PORT = aws_db_instance.postgresql.port
-      DB_NAME = aws_db_instance.postgresql.db_name
-      DB_USER = aws_db_instance.postgresql.username
+      # Use local variables for database connection info to avoid direct references
+      DB_HOST = local.db_host
+      DB_PORT = local.db_port
+      DB_NAME = local.db_name
+      DB_USER = local.db_username
       DB_PASSWORD_PARAM = aws_ssm_parameter.db_password.name
       # Add logging configuration
       LOG_LEVEL = "INFO"
@@ -161,6 +174,11 @@ resource "aws_lambda_function" "arxiv_api" {
   }
 
   tags = local.common_tags
+  
+  # Add a lifecycle rule to create the new Lambda before destroying the old one
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_iam_role" "lambda_arxiv_api" {

@@ -231,6 +231,11 @@ resource "aws_security_group" "vpc_endpoints" {
     Environment = var.environment
     ManagedBy = "terraform"
   })
+  
+  # Add a lifecycle rule to create the new security group before destroying the old one
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Get available availability zones in the region
@@ -351,6 +356,11 @@ resource "aws_security_group" "ecs_tasks" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+  
+  # Add a lifecycle rule to create the new security group before destroying the old one
+  lifecycle {
+    create_before_destroy = true
   }
 }
 

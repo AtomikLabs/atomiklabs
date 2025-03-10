@@ -40,6 +40,11 @@ resource "aws_security_group" "postgresql" {
   tags = merge(local.common_tags, {
     Name = "${local.resource_prefix}-postgresql-sg"
   })
+  
+  # Add a lifecycle rule to create the new security group before destroying the old one
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_db_parameter_group" "postgresql" {
@@ -116,4 +121,9 @@ resource "aws_security_group" "lambda_sg" {
     Environment = var.environment
     ManagedBy = "terraform"
   })
+  
+  # Add a lifecycle rule to create the new security group before destroying the old one
+  lifecycle {
+    create_before_destroy = true
+  }
 } 
