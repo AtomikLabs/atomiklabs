@@ -1,16 +1,304 @@
-data "aws_vpc" "default" {
-  default = true
+# Custom VPC for the application
+resource "aws_vpc" "main" {
+  cidr_block           = var.vpc_cidr_block
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+  instance_tenancy     = "default"
+  
+  # Enable IPv6 if needed in the future
+  assign_generated_ipv6_cidr_block = false
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-vpc"
+    Environment = var.environment
+    ManagedBy = "terraform"
+  })
 }
 
+# Enable VPC Flow Logs for security monitoring
+resource "aws_flow_log" "main" {
+  log_destination      = aws_cloudwatch_log_group.vpc_flow_log.arn
+  log_destination_type = "cloud-watch-logs"
+  traffic_type         = "ALL"
+  vpc_id               = aws_vpc.main.id
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-vpc-flow-log"
+  })
+}
+
+resource "aws_cloudwatch_log_group" "vpc_flow_log" {
+  name              = "/aws/vpc/flow-log/${local.resource_prefix}-vpc"
+  retention_in_days = 30
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-vpc-flow-log"
+  })
+}
+
+resource "aws_iam_role" "vpc_flow_log" {
+  name = "${local.resource_prefix}-vpc-flow-log-role"
+  
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "vpc-flow-logs.amazonaws.com"
+        }
+      }
+    ]
+  })
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-vpc-flow-log-role"
+  })
+}
+
+resource "aws_iam_role_policy" "vpc_flow_log" {
+  name = "${local.resource_prefix}-vpc-flow-log-policy"
+  role = aws_iam_role.vpc_flow_log.id
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams"
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Internet Gateway - allows communication between VPC and the internet
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-igw"
+    Environment = var.environment
+    ManagedBy = "terraform"
+  })
+}
+
+# Elastic IP for NAT Gateway - static public IP address
+resource "aws_eip" "nat" {
+  count = var.subnet_count > 0 ? 1 : 0
+  domain = "vpc"
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-nat-eip"
+    Environment = var.environment
+    ManagedBy = "terraform"
+  })
+  
+  # Ensure the Internet Gateway exists before creating the EIP
+  depends_on = [aws_internet_gateway.main]
+}
+
+# NAT Gateway - allows private subnet resources to access the internet
+resource "aws_nat_gateway" "main" {
+  count = var.subnet_count > 0 ? 1 : 0
+  
+  # Allocate the Elastic IP to the NAT Gateway
+  allocation_id = aws_eip.nat[0].id
+  
+  # Place the NAT Gateway in the first public subnet
+  # This is a common pattern - one NAT Gateway serving multiple private subnets
+  subnet_id = aws_subnet.public[0].id
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-nat-gateway"
+    Environment = var.environment
+    ManagedBy = "terraform"
+  })
+  
+  # Ensure the Internet Gateway exists before creating the NAT Gateway
+  # This is important because the NAT Gateway needs internet access
+  depends_on = [aws_internet_gateway.main]
+}
+
+# Public Route Table - for subnets that need direct internet access
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+  
+  # Route all internet-bound traffic through the Internet Gateway
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-public-rt"
+    Type = "Public"
+    Environment = var.environment
+    ManagedBy = "terraform"
+  })
+}
+
+# Private Route Table - for subnets that need indirect internet access via NAT
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+  
+  # Only create the route if we have a NAT Gateway
+  dynamic "route" {
+    for_each = var.subnet_count > 0 ? [1] : []
+    content {
+      # Route all internet-bound traffic through the NAT Gateway
+      cidr_block     = "0.0.0.0/0"
+      nat_gateway_id = aws_nat_gateway.main[0].id
+    }
+  }
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-private-rt"
+    Type = "Private"
+    Environment = var.environment
+    ManagedBy = "terraform"
+  })
+}
+
+# Associate public subnets with the public route table
+resource "aws_route_table_association" "public" {
+  count          = var.subnet_count
+  subnet_id      = aws_subnet.public[count.index].id
+  route_table_id = aws_route_table.public.id
+}
+
+# Associate private subnets with the private route table
+resource "aws_route_table_association" "private" {
+  count          = var.subnet_count
+  subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private.id
+}
+
+# Data source for all route tables in the VPC
+data "aws_route_tables" "all" {
+  vpc_id = aws_vpc.main.id
+  
+  depends_on = [
+    aws_route_table.public,
+    aws_route_table.private,
+    aws_route_table_association.public,
+    aws_route_table_association.private
+  ]
+}
+
+# Get available availability zones in the region
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+# Public subnets - for resources that need direct internet access
+# These subnets will host NAT Gateways and resources that need public IPs
+resource "aws_subnet" "public" {
+  count             = var.subnet_count
+  vpc_id            = aws_vpc.main.id
+  # Use the newbits parameter to create the appropriate sized subnet from the VPC CIDR
+  # For a /16 VPC CIDR, this creates /24 subnets (256 IPs each)
+  cidr_block        = cidrsubnet(var.vpc_cidr_block, 8, count.index)
+  # Use modulo to cycle through available AZs if we need more subnets than AZs
+  availability_zone = data.aws_availability_zones.available.names[count.index % length(data.aws_availability_zones.available.names)]
+  
+  # Enable auto-assign public IP for resources in public subnets
+  # This is required for instances that need direct internet access
+  map_public_ip_on_launch = true
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-public-subnet-${count.index + 1}"
+    Type = "Public"
+    Environment = var.environment
+    ManagedBy = "terraform"
+    "kubernetes.io/role/elb" = "1"  # Tag for AWS Load Balancer Controller if used
+  })
+}
+
+# Private subnets - for resources that should not be directly accessible from the internet
+# These subnets will host application servers, databases, and other internal resources
+resource "aws_subnet" "private" {
+  count             = var.subnet_count
+  vpc_id            = aws_vpc.main.id
+  # Use an offset to ensure private subnet CIDRs don't overlap with public ones
+  cidr_block        = cidrsubnet(var.vpc_cidr_block, 8, count.index + var.private_subnet_offset)
+  # Use modulo to cycle through available AZs if we need more subnets than AZs
+  availability_zone = data.aws_availability_zones.available.names[count.index % length(data.aws_availability_zones.available.names)]
+  
+  # Disable auto-assign public IP for resources in private subnets
+  # Resources in these subnets will use NAT Gateway for outbound internet access
+  map_public_ip_on_launch = false
+  
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-private-subnet-${count.index + 1}"
+    Type = "Private"
+    Environment = var.environment
+    ManagedBy = "terraform"
+    "kubernetes.io/role/internal-elb" = "1"  # Tag for AWS Load Balancer Controller if used
+  })
+}
+
+# Create data sources for the new subnets to be used by other resources
+data "aws_subnets" "public" {
+  filter {
+    name   = "vpc-id"
+    values = [aws_vpc.main.id]
+  }
+  
+  filter {
+    name   = "tag:Type"
+    values = ["Public"]
+  }
+  
+  depends_on = [aws_subnet.public]
+}
+
+data "aws_subnets" "private" {
+  filter {
+    name   = "vpc-id"
+    values = [aws_vpc.main.id]
+  }
+  
+  filter {
+    name   = "tag:Type"
+    values = ["Private"]
+  }
+  
+  depends_on = [aws_subnet.private]
+}
+
+# Keep the data source but reference our custom VPC instead of the default one
+data "aws_vpc" "default" {
+  id = aws_vpc.main.id
+}
+
+# Update the default subnets data source to include both public and private subnets
 data "aws_subnets" "default" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
   }
+  
+  depends_on = [aws_subnet.public, aws_subnet.private]
 }
 
+# Update the default route tables data source to use the new data source
 data "aws_route_tables" "default" {
   vpc_id = data.aws_vpc.default.id
+  
+  depends_on = [
+    aws_route_table.public,
+    aws_route_table.private,
+    aws_route_table_association.public,
+    aws_route_table_association.private
+  ]
 }
 
 resource "aws_security_group" "ecs_tasks" {
