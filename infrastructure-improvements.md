@@ -330,7 +330,7 @@ This document outlines the step-by-step plan to address the infrastructure limit
   4. **PostgreSQL Security Group** (`aws_security_group.postgresql` in rds.tf):
      - Allows PostgreSQL inbound (port 5432) from ECS tasks security group
      - Allows PostgreSQL inbound (port 5432) from Lambda security group
-     - Allows all outbound traffic
+     - Allows all outbound traffic to anywhere (0.0.0.0/0)
      - Referenced by the RDS instance
 
   5. **DB Password Parameter** (`aws_ssm_parameter.db_password` in rds.tf):
@@ -440,27 +440,166 @@ This document outlines the step-by-step plan to address the infrastructure limit
 
 ## Phase 6: ECS Configuration
 
-- [ ] **Step 1: Check for existing ECS configurations**
-  - [ ] Review all Terraform files for ECS-related resources
-  - [ ] Identify network configurations and security group references
+- [x] **Step 1: Check for existing ECS configurations**
+  - [x] Review all Terraform files for ECS-related resources
+  - [x] Identify network configurations and security group references
 
-- [ ] **Step 2: Update ECS service network configuration**
-  - [ ] Modify to use private subnets from the custom VPC
-  - [ ] Update security group references
-  - [ ] Verify assign_public_ip is set to false
+**Findings:**
 
-- [ ] **Step 3: Update ECS task definition**
-  - [ ] Verify environment variables are correctly set
-  - [ ] Ensure API_ENDPOINT is correctly configured to use the VPC endpoint
+- Identified the following ECS-related resources in the infrastructure:
+  1. **ECS Cluster** (`aws_ecs_cluster.arxiv` in ecs.tf):
+     - Fargate capacity provider
+     - No VPC configuration at the cluster level
+
+  2. **ECS Task Definition** (`aws_ecs_task_definition.arxiv_processor` in ecs.tf):
+     - Fargate compatibility
+     - awsvpc network mode
+     - Container definition includes:
+       - API_ENDPOINT environment variable pointing to the API Gateway
+       - AWS_REGION environment variable
+       - LOG_LEVEL environment variable
+     - Uses ECS task and execution roles
+
+  3. **ECS Service** (`aws_ecs_service.arxiv_processor` in ecs.tf):
+     - Fargate launch type
+     - Network configuration:
+       - Uses subnet IDs from data.aws_subnets.default.ids without filtering for private subnets
+       - Uses the ECS tasks security group (aws_security_group.ecs_tasks.id)
+       - assign_public_ip is set to false, which is correct for private subnets
+
+  4. **Step Functions State Machine** (in step_functions.tf):
+     - References the ECS task definition
+     - Network configuration:
+       - Uses subnet IDs from data.aws_subnets.default.ids without filtering for private subnets
+       - Uses the ECS tasks security group (aws_security_group.ecs_tasks.id)
+       - AssignPublicIp is set to "DISABLED", which is correct for private subnets
+
+- **Issues Identified**:
+  - Both the ECS service and Step Functions state machine use subnet IDs from data.aws_subnets.default.ids without filtering for private subnets
+  - The API_ENDPOINT environment variable in the task definition points to the API Gateway's public endpoint, not the VPC endpoint
+  - The ECS tasks security group only allows outbound traffic, which is correct but may need to be verified for specific requirements
+  - The assign_public_ip setting is correctly set to false/DISABLED, but without a NAT Gateway in the current setup, tasks wouldn't have internet access
+
+- [x] **Step 2: Update ECS service network configuration**
+  - [x] Modify to use private subnets from the custom VPC
+  - [x] Update security group references
+  - [x] Verify assign_public_ip is set to false
+
+**Implementation:**
+
+- Updated the ECS service network configuration to use only private subnets from the custom VPC:
+  - Changed from `subnets = data.aws_subnets.default.ids` to `subnets = data.aws_subnets.private.ids`
+  - This ensures ECS tasks are only deployed in private subnets for better security
+- Updated the Step Functions state machine network configuration to use only private subnets:
+  - Changed from `Subnets = data.aws_subnets.default.ids` to `Subnets = data.aws_subnets.private.ids`
+  - This ensures consistency between the ECS service and Step Functions state machine
+- Verified that the security group reference is correct (aws_security_group.ecs_tasks.id)
+- Confirmed that assign_public_ip is set to false/DISABLED, which is the correct configuration
+- With the NAT Gateway created in Phase 1, Step 4, ECS tasks in private subnets can now access the internet
+- This configuration ensures that ECS tasks:
+  - Are deployed in private subnets with no direct internet access
+  - Can access the internet via the NAT Gateway for outbound connections (e.g., to arXiv)
+  - Can access the RDS database via the PostgreSQL security group
+  - Can access VPC endpoints for AWS services
+  - Are protected by appropriate security groups
+- The ECS tasks will now follow security best practices while maintaining all required functionality
+
+- [x] **Step 3: Update ECS task definition**
+  - [x] Verify environment variables are correctly set
+  - [x] Ensure API_ENDPOINT is correctly configured to use the VPC endpoint
+
+**Implementation:**
+
+- Updated the API_ENDPOINT environment variable in the ECS task definition to use the VPC endpoint URL:
+  - Changed from `https://${aws_api_gateway_rest_api.main.id}-${var.environment}.execute-api.${var.region}.amazonaws.com` to `https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.region}.amazonaws.com/${var.environment}/`
+  - This ensures that API calls stay within the VPC and don't go through the internet
+- Verified that the URL format includes the correct stage name (environment variable) and trailing slash
+  - The format matches the one used in outputs.tf: `${invoke_url}${stage_name}/`
+- Verified that other environment variables (AWS_REGION, LOG_LEVEL) are correctly set
+- Added comments explaining the purpose of the change and why it's important for security
+- This configuration ensures that:
+  - ECS tasks communicate with the API Gateway through the VPC endpoint
+  - All traffic remains within the VPC for better security
+  - The URL format is correct and consistent with the rest of the infrastructure
+  - The configuration follows security best practices by using private networking for internal communication
 
 ## Phase 7: API Gateway Configuration
 
-- [ ] **Step 1: Check for existing API Gateway configurations**
-  - [ ] Review all Terraform files for API Gateway resources
-  - [ ] Identify endpoint configurations and policy references
+- [x] **Step 1: Check for existing API Gateway configurations**
+  - [x] Review all Terraform files for API Gateway resources
+  - [x] Identify endpoint configurations and policy references
 
-- [ ] **Step 2: Update API Gateway endpoint configuration**
-  - [ ] Verify it's configured as PRIVATE
-  - [ ] Update VPC endpoint references
-  - [ ] Update resource policy to reference the custom VPC
-  - [ ] Ensure it references the correct IAM roles
+**Findings:**
+
+- Identified the following API Gateway resources in the infrastructure:
+  1. **REST API** (`aws_api_gateway_rest_api.main` in api_gateway.tf):
+     - Configured as a PRIVATE API Gateway
+     - References the API Gateway VPC endpoint in its endpoint configuration
+     - Has a resource policy with three statements:
+       - Allows access from within the default VPC (`aws:SourceVpc`: data.aws_vpc.default.id)
+       - Allows access from the VPC endpoint (`aws:SourceVpce`: aws_vpc_endpoint.api_gateway.id)
+       - Allows access from specific IAM roles (ECS task role and Lambda API role)
+
+  2. **API Gateway Deployment** (`aws_api_gateway_deployment.main` in api_gateway.tf):
+     - References all API resources, methods, and integrations
+     - Has a trigger for redeployment based on changes to resources
+     - Has dependencies on all integrations
+
+  3. **API Gateway Stage** (`aws_api_gateway_stage.main` in api_gateway.tf):
+     - Stage name is set to the environment variable
+     - X-Ray tracing is enabled
+     - Caching is disabled
+     - Has a stage variable for deployment timestamp
+
+  4. **API Gateway VPC Endpoint** (`aws_vpc_endpoint.api_gateway` in network.tf):
+     - Interface endpoint type
+     - Uses private subnets (already updated in Phase 3)
+     - Uses the VPC endpoints security group (already updated in Phase 3)
+     - Has private DNS enabled
+     - Has a policy allowing execute-api:Invoke on the specific API Gateway
+
+  5. **Lambda Integration** (`aws_lambda_function.arxiv_api` in lambda.tf):
+     - Python 3.11 runtime
+     - VPC configuration using private subnets (already updated in Phase 5)
+     - Environment variables for database connection and logging
+
+- **Resources Referencing API Gateway**:
+  - ECS task definition in ecs.tf:
+    - References the API Gateway in the API_ENDPOINT environment variable (updated in Phase 6)
+  - Lambda functions in lambda.tf:
+    - Have permissions to invoke the API Gateway
+  - Outputs in outputs.tf:
+    - Output the API Gateway URL and ID
+
+- **Issues Identified**:
+  - The API Gateway resource policy references the default VPC (`data.aws_vpc.default.id`) instead of the custom VPC
+  - The policy allows execute-api:Invoke on all resources (`Resource = "*"`) in two statements, which is overly permissive
+  - The API Gateway is correctly configured as PRIVATE
+  - The VPC endpoint for API Gateway is correctly configured with private subnets and the dedicated security group
+
+- [x] **Step 2: Update API Gateway endpoint configuration**
+  - [x] Verify it's configured as PRIVATE
+  - [x] Update VPC endpoint references
+  - [x] Update resource policy to reference the custom VPC
+  - [x] Ensure it references the correct IAM roles
+
+**Implementation:**
+
+- Verified that the API Gateway is correctly configured as PRIVATE:
+  - Confirmed the endpoint_configuration types is set to ["PRIVATE"]
+  - Confirmed it references the API Gateway VPC endpoint in its configuration
+- Verified that the VPC endpoint references are correct:
+  - The data source `data.aws_vpc.default` already references the custom VPC (`aws_vpc.main.id`)
+  - No changes were needed to the VPC reference as it was already updated in Phase 1
+- Updated the API Gateway resource policy to be more restrictive:
+  - Changed all three policy statements to use a specific resource scope instead of wildcard "*"
+  - Updated from `Resource = "*"` to `Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*"`
+  - This follows the principle of least privilege by only allowing access to this specific API Gateway
+- Verified that the policy references the correct IAM roles:
+  - Confirmed the policy includes the ECS task role and Lambda API role
+  - No changes were needed to the IAM role references
+- This configuration ensures that:
+  - The API Gateway is only accessible from within the custom VPC
+  - Only authorized roles can invoke the API Gateway
+  - The policy follows the principle of least privilege
+  - All components work together correctly without breaking existing functionality

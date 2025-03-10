@@ -83,7 +83,7 @@ resource "aws_sfn_state_machine" "daily_processor" {
           TaskDefinition = aws_ecs_task_definition.arxiv_processor.arn
           NetworkConfiguration = {
             AwsvpcConfiguration = {
-              Subnets = data.aws_subnets.default.ids
+              Subnets = data.aws_subnets.private.ids
               SecurityGroups = [aws_security_group.ecs_tasks.id]
               AssignPublicIp = "DISABLED"
             }

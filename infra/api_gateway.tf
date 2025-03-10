@@ -8,35 +8,35 @@ resource "aws_api_gateway_rest_api" "main" {
     vpc_endpoint_ids = [aws_vpc_endpoint.api_gateway.id]
   }
 
-  # Simplified resource policy allowing access from VPC and authorized roles
+  # Improved resource policy with more restrictive permissions
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      # Allow access from within our VPC
+      # Allow access from within our VPC with specific resource scope
       {
         Effect = "Allow"
         Principal = "*"
         Action = "execute-api:Invoke"
-        Resource = "*"
+        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*"
         Condition = {
           StringEquals = {
             "aws:SourceVpc": data.aws_vpc.default.id
           }
         }
       },
-      # Allow access from the VPC endpoint
+      # Allow access from the VPC endpoint with specific resource scope
       {
         Effect = "Allow"
         Principal = "*"
         Action = "execute-api:Invoke"
-        Resource = "*"
+        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*"
         Condition = {
           StringEquals = {
             "aws:SourceVpce": aws_vpc_endpoint.api_gateway.id
           }
         }
       },
-      # Allow access from specific IAM roles
+      # Allow access from specific IAM roles with specific resource scope
       {
         Effect = "Allow"
         Principal = {
@@ -46,7 +46,7 @@ resource "aws_api_gateway_rest_api" "main" {
           ]
         }
         Action = "execute-api:Invoke"
-        Resource = "*"
+        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*"
       }
     ]
   })

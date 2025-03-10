@@ -113,7 +113,7 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
       name  = "arxiv-processor"
       image = "${aws_ecr_repository.daily_processor.repository_url}:arxiv"
       environment = [
-        { name = "API_ENDPOINT", value = "https://${aws_api_gateway_rest_api.main.id}-${var.environment}.execute-api.${var.region}.amazonaws.com" },
+        { name = "API_ENDPOINT", value = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.region}.amazonaws.com/${var.environment}/" },
         { name = "AWS_REGION", value = var.region },
         { name = "LOG_LEVEL", value = "DEBUG" }
       ]
@@ -139,7 +139,7 @@ resource "aws_ecs_service" "arxiv_processor" {
 
   # Configure network settings to use the VPC
   network_configuration {
-    subnets          = data.aws_subnets.default.ids
+    subnets          = data.aws_subnets.private.ids
     security_groups  = [aws_security_group.ecs_tasks.id]
     assign_public_ip = false  # Ensure tasks use private IPs only to route through VPC endpoints
   }
