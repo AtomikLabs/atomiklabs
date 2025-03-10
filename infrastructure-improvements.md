@@ -603,3 +603,12 @@ This document outlines the step-by-step plan to address the infrastructure limit
   - Only authorized roles can invoke the API Gateway
   - The policy follows the principle of least privilege
   - All components work together correctly without breaking existing functionality
+
+**Additional Fix:**
+
+- Fixed a circular dependency between `aws_vpc_endpoint.api_gateway` and `aws_api_gateway_rest_api.main`:
+  - The API Gateway REST API was referencing the VPC endpoint in its endpoint configuration
+  - The VPC endpoint was referencing the API Gateway REST API ID in its policy
+  - Updated the VPC endpoint policy to use a wildcard for the API Gateway ID (`*/*` instead of `${aws_api_gateway_rest_api.main.id}/*`)
+  - This breaks the circular dependency while still maintaining appropriate access controls
+  - The API Gateway's own resource policy provides the more specific restrictions needed for security

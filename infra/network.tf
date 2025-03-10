@@ -422,7 +422,7 @@ resource "aws_vpc_endpoint" "api_gateway" {
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
   private_dns_enabled = true
   
-  # More restrictive policy that only allows access to specific API Gateway resources
+  # Use a wildcard for the API Gateway ID to break the circular dependency
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -430,7 +430,7 @@ resource "aws_vpc_endpoint" "api_gateway" {
         Effect    = "Allow"
         Principal = "*"
         Action    = "execute-api:Invoke"
-        Resource  = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*"
+        Resource  = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/*"
       }
     ]
   })
