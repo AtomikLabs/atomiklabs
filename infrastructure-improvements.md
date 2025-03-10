@@ -625,10 +625,11 @@ This document outlines the step-by-step plan to address the infrastructure limit
   - The VPC Flow Log now correctly uses the IAM role created for it
 
 - Fixed RDS DB Subnet Group VPC mismatch:
-  - Created a new DB subnet group with a different name instead of modifying the existing one
-  - Changed from `name = "${local.resource_prefix}-subnet-group-${local.resource_suffix}"` to `name = "${local.resource_prefix}-subnet-group-new-${local.resource_suffix}"`
+  - Modified the DB subnet group to use a different name pattern that doesn't include the resource suffix
+  - Changed from `name = "${local.resource_prefix}-subnet-group-${local.resource_suffix}"` to `name = "${local.resource_prefix}-subnet-group-custom"`
+  - This approach creates a new subnet group with a different name while keeping the same resource name in Terraform
+  - The RDS instance will continue to reference the same resource name (`aws_db_subnet_group.postgresql`) but will use the new subnet group
   - This resolves the error: "The new Subnets are not in the same Vpc as the existing subnet group"
-  - The new DB subnet group will be used for the RDS instance in the custom VPC
 
 - Fixed all remaining references to the default VPC:
   - Updated all security groups to use the custom VPC:

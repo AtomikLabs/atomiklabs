@@ -1,9 +1,9 @@
 resource "aws_db_subnet_group" "postgresql" {
-  name       = "${local.resource_prefix}-subnet-group-new-${local.resource_suffix}"
+  name       = "${local.resource_prefix}-subnet-group-custom"
   subnet_ids = data.aws_subnets.private.ids
 
   tags = merge(local.common_tags, {
-    Name = "${local.resource_prefix}-subnet-group-new"
+    Name = "${local.resource_prefix}-subnet-group-custom"
     Environment = var.environment
     ManagedBy = "terraform"
   })
