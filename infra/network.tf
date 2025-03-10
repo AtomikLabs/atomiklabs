@@ -193,6 +193,45 @@ data "aws_route_tables" "all" {
   ]
 }
 
+# Security group for VPC endpoints - restricts access to only necessary sources
+resource "aws_security_group" "vpc_endpoints" {
+  name        = "${local.resource_prefix}-vpc-endpoints-sg-${local.resource_suffix}"
+  description = "Security group for VPC endpoints with restricted access"
+  vpc_id      = data.aws_vpc.default.id
+
+  # Allow HTTPS inbound from ECS tasks
+  ingress {
+    description     = "HTTPS from ECS tasks"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs_tasks.id]
+  }
+
+  # Allow HTTPS inbound from Lambda functions
+  ingress {
+    description     = "HTTPS from Lambda functions"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lambda_sg.id]
+  }
+
+  # Allow all outbound traffic
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${local.resource_prefix}-vpc-endpoints-sg"
+    Environment = var.environment
+    ManagedBy = "terraform"
+  })
+}
+
 # Get available availability zones in the region
 data "aws_availability_zones" "available" {
   state = "available"
@@ -318,10 +357,12 @@ resource "aws_vpc_endpoint" "s3" {
   vpc_id            = data.aws_vpc.default.id
   service_name      = "com.amazonaws.${var.region}.s3"
   vpc_endpoint_type = "Gateway"
-  route_table_ids   = data.aws_route_tables.default.ids
+  route_table_ids   = [aws_route_table.private.id]
   
   tags = merge(local.common_tags, {
     Name = "${local.resource_prefix}-s3-endpoint"
+    Environment = var.environment
+    ManagedBy = "terraform"
   })
 }
 
@@ -329,12 +370,14 @@ resource "aws_vpc_endpoint" "ssm" {
   vpc_id              = data.aws_vpc.default.id
   service_name        = "com.amazonaws.${var.region}.ssm"
   vpc_endpoint_type   = "Interface"
-  subnet_ids          = data.aws_subnets.default.ids
-  security_group_ids  = [aws_security_group.lambda_sg.id]
+  subnet_ids          = data.aws_subnets.private.ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
   private_dns_enabled = true
   
   tags = merge(local.common_tags, {
     Name = "${local.resource_prefix}-ssm-endpoint"
+    Environment = var.environment
+    ManagedBy = "terraform"
   })
 }
 
@@ -343,12 +386,14 @@ resource "aws_vpc_endpoint" "ses" {
   vpc_id              = data.aws_vpc.default.id
   service_name        = "com.amazonaws.${var.region}.email-smtp"
   vpc_endpoint_type   = "Interface"
-  subnet_ids          = data.aws_subnets.default.ids
-  security_group_ids  = [aws_security_group.lambda_sg.id]
+  subnet_ids          = data.aws_subnets.private.ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
   private_dns_enabled = true
   
   tags = merge(local.common_tags, {
     Name = "${local.resource_prefix}-ses-endpoint"
+    Environment = var.environment
+    ManagedBy = "terraform"
   })
 }
 
@@ -357,12 +402,14 @@ resource "aws_vpc_endpoint" "lambda" {
   vpc_id              = data.aws_vpc.default.id
   service_name        = "com.amazonaws.${var.region}.lambda"
   vpc_endpoint_type   = "Interface"
-  subnet_ids          = data.aws_subnets.default.ids
-  security_group_ids  = [aws_security_group.lambda_sg.id]
+  subnet_ids          = data.aws_subnets.private.ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
   private_dns_enabled = true
   
   tags = merge(local.common_tags, {
     Name = "${local.resource_prefix}-lambda-endpoint"
+    Environment = var.environment
+    ManagedBy = "terraform"
   })
 }
 
@@ -371,24 +418,26 @@ resource "aws_vpc_endpoint" "api_gateway" {
   vpc_id              = data.aws_vpc.default.id
   service_name        = "com.amazonaws.${var.region}.execute-api"
   vpc_endpoint_type   = "Interface"
-  subnet_ids          = data.aws_subnets.default.ids
-  security_group_ids  = [aws_security_group.lambda_sg.id]
+  subnet_ids          = data.aws_subnets.private.ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
   private_dns_enabled = true
   
-  # Ensure the endpoint allows all API Gateway operations
+  # More restrictive policy that only allows access to specific API Gateway resources
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
         Effect    = "Allow"
         Principal = "*"
-        Action    = "execute-api:*"
-        Resource  = "*"
+        Action    = "execute-api:Invoke"
+        Resource  = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*"
       }
     ]
   })
   
   tags = merge(local.common_tags, {
     Name = "${local.resource_prefix}-api-gateway-endpoint"
+    Environment = var.environment
+    ManagedBy = "terraform"
   })
 } 
