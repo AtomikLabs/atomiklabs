@@ -1,9 +1,11 @@
 resource "aws_db_subnet_group" "postgresql" {
   name       = "${local.resource_prefix}-subnet-group-${local.resource_suffix}"
-  subnet_ids = data.aws_subnets.default.ids
+  subnet_ids = data.aws_subnets.private.ids
 
   tags = merge(local.common_tags, {
     Name = "${local.resource_prefix}-subnet-group"
+    Environment = var.environment
+    ManagedBy = "terraform"
   })
 }
 
@@ -101,15 +103,7 @@ resource "aws_security_group" "lambda_sg" {
     description = "Allow traffic between resources using this security group"
   }
 
-  # Allow HTTPS inbound for API Gateway invocation
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow HTTPS inbound for API Gateway"
-  }
-
+  # Allow all outbound traffic
   egress {
     from_port   = 0
     to_port     = 0
@@ -119,5 +113,7 @@ resource "aws_security_group" "lambda_sg" {
 
   tags = merge(local.common_tags, {
     Name = "${local.resource_prefix}-lambda-sg"
+    Environment = var.environment
+    ManagedBy = "terraform"
   })
 } 

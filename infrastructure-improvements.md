@@ -304,20 +304,139 @@ This document outlines the step-by-step plan to address the infrastructure limit
 
 ## Phase 4: Database Configuration
 
-- [ ] **Step 1: Check for existing RDS configurations**
-  - [ ] Review all Terraform files for RDS-related resources
-  - [ ] Identify dependencies on subnet groups and security groups
+- [x] **Step 1: Check for existing RDS configurations**
+  - [x] Review all Terraform files for RDS-related resources
+  - [x] Identify dependencies on subnet groups and security groups
+
+**Findings:**
+
+- Identified the following RDS-related resources in the infrastructure:
+  1. **DB Subnet Group** (`aws_db_subnet_group.postgresql` in rds.tf):
+     - Uses subnet IDs from data.aws_subnets.default.ids without filtering for private subnets
+     - Referenced by the RDS instance
+
+  2. **DB Parameter Group** (`aws_db_parameter_group.postgresql` in rds.tf):
+     - Configures PostgreSQL 17 parameters
+     - Referenced by the RDS instance
+
+  3. **DB Instance** (`aws_db_instance.postgresql` in rds.tf):
+     - PostgreSQL 17.3 database
+     - Uses the DB subnet group and parameter group
+     - Uses the PostgreSQL security group
+     - Not publicly accessible (publicly_accessible = false)
+     - Storage is encrypted
+     - Free tier eligible settings (no multi-AZ, minimal backup retention)
+
+  4. **PostgreSQL Security Group** (`aws_security_group.postgresql` in rds.tf):
+     - Allows PostgreSQL inbound (port 5432) from ECS tasks security group
+     - Allows PostgreSQL inbound (port 5432) from Lambda security group
+     - Allows all outbound traffic
+     - Referenced by the RDS instance
+
+  5. **DB Password Parameter** (`aws_ssm_parameter.db_password` in rds.tf):
+     - Stores the database password in AWS Systems Manager Parameter Store
+     - Used by the RDS instance
+
+- **Resources Referencing RDS**:
+  - Lambda functions in lambda.tf:
+    - Reference the RDS instance for connection details (address, port, name, username)
+    - Have permissions to access the RDS instance
+  - ECS tasks in ecs.tf:
+    - Have permissions to access the RDS instance
+  - Outputs in outputs.tf:
+    - Output the RDS endpoint, database name, and username
+
+- **Issues Identified**:
+  - The DB subnet group uses all subnets without filtering for private subnets
+  - The RDS instance is correctly configured as not publicly accessible
+  - The security group configuration follows best practices by only allowing access from specific security groups
+
+- [x] **Step 2: Update RDS subnet group**
+  - [x] Modify to use private subnets from the custom VPC
+  - [x] Ensure appropriate tags are applied
+
+**Implementation:**
+
+- Updated the DB subnet group to use only private subnets from the custom VPC:
+  - Changed from `subnet_ids = data.aws_subnets.default.ids` to `subnet_ids = data.aws_subnets.private.ids`
+  - This ensures the RDS instance is only placed in private subnets for better security
+- Added comprehensive tags including:
+  - Environment tag from variable
+  - ManagedBy tag set to "terraform"
+- This configuration ensures that the RDS instance is properly secured in private subnets
+- The RDS instance will now be deployed in private subnets with no direct internet access, following security best practices
+- Access to the RDS instance is still controlled by the PostgreSQL security group, which only allows connections from ECS tasks and Lambda functions
 
 ## Phase 5: Lambda Configuration
 
-- [ ] **Step 1: Check for existing Lambda configurations**
-  - [ ] Review all Terraform files for Lambda function definitions
-  - [ ] Identify VPC configurations and security group references
+- [x] **Step 1: Check for existing Lambda configurations**
+  - [x] Review all Terraform files for Lambda function definitions
+  - [x] Identify VPC configurations and security group references
 
-- [ ] **Step 2: Update Lambda VPC configuration**
-  - [ ] Modify to use private subnets from the custom VPC
-  - [ ] Update security group references
-  - [ ] Verify environment variables are correctly set
+**Findings:**
+
+- Identified two Lambda functions in the infrastructure:
+  1. **Mailer Lambda Function** (`aws_lambda_function.mailer` in lambda.tf):
+     - Python 3.11 runtime
+     - VPC configuration:
+       - Uses subnet IDs from data.aws_subnets.default.ids without filtering for private subnets
+       - Uses the Lambda security group (aws_security_group.lambda_sg.id)
+     - Environment variables include:
+       - Database connection details (host, port, name, username)
+       - SSM parameter for database password
+     - Referenced by:
+       - Step Functions state machine in step_functions.tf
+       - CloudWatch Log Group in lambda.tf
+       - Outputs in outputs.tf
+
+  2. **arXiv API Lambda Function** (`aws_lambda_function.arxiv_api` in lambda.tf):
+     - Python 3.11 runtime
+     - VPC configuration:
+       - Uses subnet IDs from data.aws_subnets.default.ids without filtering for private subnets
+       - Uses the Lambda security group (aws_security_group.lambda_sg.id)
+     - Environment variables include:
+       - Database connection details (host, port, name, username)
+       - SSM parameter for database password
+       - Logging configuration
+     - Referenced by:
+       - API Gateway integrations in api_gateway.tf
+       - CloudWatch Log Group in lambda.tf
+       - CloudWatch Alarm in cloudwatch.tf
+       - Outputs in outputs.tf
+
+- **Issues Identified**:
+  - Both Lambda functions use subnet IDs from data.aws_subnets.default.ids without filtering for private subnets
+  - Both Lambda functions use the Lambda security group which has overly permissive inbound rules
+  - The Lambda functions need to access:
+    - RDS PostgreSQL database
+    - VPC endpoints (SSM, SES, Lambda, API Gateway)
+    - AWS services via VPC endpoints
+
+- [x] **Step 2: Update Lambda VPC configuration**
+  - [x] Modify to use private subnets from the custom VPC
+  - [x] Update security group references
+  - [x] Verify environment variables are correctly set
+
+**Implementation:**
+
+- Updated both Lambda functions to use only private subnets from the custom VPC:
+  - Changed from `subnet_ids = data.aws_subnets.default.ids` to `subnet_ids = data.aws_subnets.private.ids`
+  - This ensures Lambda functions are only deployed in private subnets for better security
+- Modified the Lambda security group to remove the overly permissive inbound rule:
+  - Removed the ingress rule allowing HTTPS (port 443) from anywhere (0.0.0.0/0)
+  - Kept the self-referencing ingress rule to allow traffic between resources using this security group
+  - Kept the egress rule allowing all outbound traffic
+- Added comprehensive tags to the Lambda security group including:
+  - Environment tag from variable
+  - ManagedBy tag set to "terraform"
+- Verified that environment variables are correctly set and don't need changes
+- This configuration ensures that Lambda functions:
+  - Are deployed in private subnets with no direct internet access
+  - Can access the internet via the NAT Gateway for outbound connections
+  - Can access the RDS database via the PostgreSQL security group
+  - Can access VPC endpoints for AWS services
+  - Are protected by a more restrictive security group
+- The Lambda functions will now follow security best practices while maintaining all required functionality
 
 ## Phase 6: ECS Configuration
 

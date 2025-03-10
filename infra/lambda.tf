@@ -12,7 +12,7 @@ resource "aws_lambda_function" "mailer" {
   layers          = [aws_lambda_layer_version.shared_layer.arn]
 
   vpc_config {
-    subnet_ids         = data.aws_subnets.default.ids
+    subnet_ids         = data.aws_subnets.private.ids
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
 
@@ -139,7 +139,7 @@ resource "aws_lambda_function" "arxiv_api" {
   layers          = [aws_lambda_layer_version.shared_layer.arn]
 
   vpc_config {
-    subnet_ids         = data.aws_subnets.default.ids
+    subnet_ids         = data.aws_subnets.private.ids
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
 
