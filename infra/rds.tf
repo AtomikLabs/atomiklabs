@@ -1,9 +1,9 @@
 resource "aws_db_subnet_group" "postgresql" {
-  name       = "${local.resource_prefix}-subnet-group-${local.resource_suffix}"
+  name       = "${local.resource_prefix}-subnet-group-new-${local.resource_suffix}"
   subnet_ids = data.aws_subnets.private.ids
 
   tags = merge(local.common_tags, {
-    Name = "${local.resource_prefix}-subnet-group"
+    Name = "${local.resource_prefix}-subnet-group-new"
     Environment = var.environment
     ManagedBy = "terraform"
   })
@@ -12,7 +12,7 @@ resource "aws_db_subnet_group" "postgresql" {
 resource "aws_security_group" "postgresql" {
   name        = "${local.resource_prefix}-postgresql-sg-${local.resource_suffix}"
   description = "Allow PostgreSQL inbound traffic from ECS tasks and Lambda"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = aws_vpc.main.id
 
   ingress {
     description     = "PostgreSQL from ECS tasks"
@@ -92,7 +92,7 @@ resource "random_password" "db_password" {
 resource "aws_security_group" "lambda_sg" {
   name        = "${local.resource_prefix}-lambda-sg-${local.resource_suffix}"
   description = "Security group for Lambda functions to access RDS"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = aws_vpc.main.id
   
   # Allow all traffic within the security group itself
   ingress {

@@ -618,3 +618,31 @@ This document outlines the step-by-step plan to address the infrastructure limit
   - Updated all three policy statements to use a wildcard for the API Gateway ID (`*/*` instead of `${aws_api_gateway_rest_api.main.id}/*`)
   - This avoids the self-referential blocks while still maintaining appropriate access controls
   - The combination of VPC, VPC endpoint, and IAM role conditions still provides strong security controls
+
+- Fixed VPC Flow Log configuration:
+  - Added the missing `iam_role_arn` parameter to the VPC Flow Log resource
+  - This resolves the error: "DeliverLogsPermissionArn can't be empty if LogDestinationType is cloud-watch-logs"
+  - The VPC Flow Log now correctly uses the IAM role created for it
+
+- Fixed RDS DB Subnet Group VPC mismatch:
+  - Created a new DB subnet group with a different name instead of modifying the existing one
+  - Changed from `name = "${local.resource_prefix}-subnet-group-${local.resource_suffix}"` to `name = "${local.resource_prefix}-subnet-group-new-${local.resource_suffix}"`
+  - This resolves the error: "The new Subnets are not in the same Vpc as the existing subnet group"
+  - The new DB subnet group will be used for the RDS instance in the custom VPC
+
+- Fixed all remaining references to the default VPC:
+  - Updated all security groups to use the custom VPC:
+    - Changed `vpc_id = data.aws_vpc.default.id` to `vpc_id = aws_vpc.main.id` in:
+      - `aws_security_group.postgresql`
+      - `aws_security_group.lambda_sg`
+      - `aws_security_group.vpc_endpoints`
+      - `aws_security_group.ecs_tasks`
+  - Updated all VPC endpoints to use the custom VPC:
+    - Changed `vpc_id = data.aws_vpc.default.id` to `vpc_id = aws_vpc.main.id` in:
+      - `aws_vpc_endpoint.s3`
+      - `aws_vpc_endpoint.ssm`
+      - `aws_vpc_endpoint.ses`
+      - `aws_vpc_endpoint.lambda`
+      - `aws_vpc_endpoint.api_gateway`
+  - This ensures that all resources are deployed in the custom VPC and not in the default VPC
+  - The data source `data.aws_vpc.default` still references the custom VPC, but now all resources directly reference `aws_vpc.main.id` for clarity

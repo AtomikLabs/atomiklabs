@@ -21,6 +21,7 @@ resource "aws_flow_log" "main" {
   log_destination_type = "cloud-watch-logs"
   traffic_type         = "ALL"
   vpc_id               = aws_vpc.main.id
+  iam_role_arn         = aws_iam_role.vpc_flow_log.arn
   
   tags = merge(local.common_tags, {
     Name = "${local.resource_prefix}-vpc-flow-log"
@@ -197,7 +198,7 @@ data "aws_route_tables" "all" {
 resource "aws_security_group" "vpc_endpoints" {
   name        = "${local.resource_prefix}-vpc-endpoints-sg-${local.resource_suffix}"
   description = "Security group for VPC endpoints with restricted access"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = aws_vpc.main.id
 
   # Allow HTTPS inbound from ECS tasks
   ingress {
@@ -343,7 +344,7 @@ data "aws_route_tables" "default" {
 resource "aws_security_group" "ecs_tasks" {
   name        = "${local.resource_prefix}-ecs-tasks-${local.resource_suffix}"
   description = "Allow outbound traffic for ECS tasks"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = aws_vpc.main.id
 
   egress {
     from_port   = 0
@@ -354,7 +355,7 @@ resource "aws_security_group" "ecs_tasks" {
 }
 
 resource "aws_vpc_endpoint" "s3" {
-  vpc_id            = data.aws_vpc.default.id
+  vpc_id            = aws_vpc.main.id
   service_name      = "com.amazonaws.${var.region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.private.id]
@@ -367,7 +368,7 @@ resource "aws_vpc_endpoint" "s3" {
 }
 
 resource "aws_vpc_endpoint" "ssm" {
-  vpc_id              = data.aws_vpc.default.id
+  vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.region}.ssm"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = data.aws_subnets.private.ids
@@ -383,7 +384,7 @@ resource "aws_vpc_endpoint" "ssm" {
 
 # SES VPC Endpoint (Interface type)
 resource "aws_vpc_endpoint" "ses" {
-  vpc_id              = data.aws_vpc.default.id
+  vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.region}.email-smtp"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = data.aws_subnets.private.ids
@@ -399,7 +400,7 @@ resource "aws_vpc_endpoint" "ses" {
 
 # Lambda VPC Endpoint (Interface type)
 resource "aws_vpc_endpoint" "lambda" {
-  vpc_id              = data.aws_vpc.default.id
+  vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.region}.lambda"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = data.aws_subnets.private.ids
@@ -415,7 +416,7 @@ resource "aws_vpc_endpoint" "lambda" {
 
 # API Gateway VPC Endpoint (Interface type)
 resource "aws_vpc_endpoint" "api_gateway" {
-  vpc_id              = data.aws_vpc.default.id
+  vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.region}.execute-api"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = data.aws_subnets.private.ids
