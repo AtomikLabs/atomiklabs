@@ -9,6 +9,7 @@ resource "aws_api_gateway_rest_api" "main" {
   }
 
   # Improved resource policy with more restrictive permissions
+  # Using wildcard for API Gateway ID to avoid self-referential blocks
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -17,7 +18,7 @@ resource "aws_api_gateway_rest_api" "main" {
         Effect = "Allow"
         Principal = "*"
         Action = "execute-api:Invoke"
-        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*"
+        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/*"
         Condition = {
           StringEquals = {
             "aws:SourceVpc": data.aws_vpc.default.id
@@ -29,7 +30,7 @@ resource "aws_api_gateway_rest_api" "main" {
         Effect = "Allow"
         Principal = "*"
         Action = "execute-api:Invoke"
-        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*"
+        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/*"
         Condition = {
           StringEquals = {
             "aws:SourceVpce": aws_vpc_endpoint.api_gateway.id
@@ -46,7 +47,7 @@ resource "aws_api_gateway_rest_api" "main" {
           ]
         }
         Action = "execute-api:Invoke"
-        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*"
+        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/*"
       }
     ]
   })

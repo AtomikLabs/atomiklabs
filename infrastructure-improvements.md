@@ -612,3 +612,9 @@ This document outlines the step-by-step plan to address the infrastructure limit
   - Updated the VPC endpoint policy to use a wildcard for the API Gateway ID (`*/*` instead of `${aws_api_gateway_rest_api.main.id}/*`)
   - This breaks the circular dependency while still maintaining appropriate access controls
   - The API Gateway's own resource policy provides the more specific restrictions needed for security
+
+- Fixed self-referential blocks in the API Gateway resource policy:
+  - The API Gateway REST API was referencing itself in its own policy, which Terraform doesn't allow
+  - Updated all three policy statements to use a wildcard for the API Gateway ID (`*/*` instead of `${aws_api_gateway_rest_api.main.id}/*`)
+  - This avoids the self-referential blocks while still maintaining appropriate access controls
+  - The combination of VPC, VPC endpoint, and IAM role conditions still provides strong security controls
