@@ -200,22 +200,13 @@ resource "aws_security_group" "vpc_endpoints" {
   description = "Security group for VPC endpoints with restricted access"
   vpc_id      = aws_vpc.main.id
 
-  # Allow HTTPS inbound from ECS tasks
+  # Allow all HTTPS inbound traffic from the VPC
   ingress {
-    description     = "HTTPS from ECS tasks"
+    description     = "HTTPS from VPC"
     from_port       = 443
     to_port         = 443
     protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id]
-  }
-
-  # Allow HTTPS inbound from Lambda functions
-  ingress {
-    description     = "HTTPS from Lambda functions"
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.lambda_sg.id]
+    cidr_blocks     = [aws_vpc.main.cidr_block]
   }
 
   # Allow all outbound traffic

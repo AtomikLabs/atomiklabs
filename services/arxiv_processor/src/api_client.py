@@ -214,8 +214,16 @@ class ApiClient:
                 }
                 
                 # No SigV4 signing - API Gateway no longer requires authentication
-                logger.debug(f"Making request without SigV4 signing: {method} {full_url}")
-                logger.debug(f"Headers: {headers}")
+                logger.info(f"Making request without SigV4 signing: {method} {full_url}")
+                logger.info(f"Headers: {headers}")
+                
+                # Remove any headers that might be causing issues
+                headers = {
+                    "Content-Type": "application/json",
+                    "User-Agent": "ArxivProcessor/1.0"
+                }
+                
+                logger.info(f"Simplified headers: {headers}")
                 
                 # Make the request directly to the VPC endpoint URL
                 response = requests.request(

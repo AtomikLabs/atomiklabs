@@ -12,6 +12,27 @@ resource "aws_apigatewayv2_api" "http_api" {
     allow_headers = ["Content-Type", "Authorization", "X-Amz-Date", "X-Api-Key", "X-Amz-Security-Token"]
   }
   
+  # Add explicit resource policy to allow access from VPC endpoint
+  body = jsonencode({
+    openapi = "3.0.1"
+    info = {
+      title   = "${local.resource_prefix}-http-api"
+      version = "1.0"
+    }
+    paths = {}
+    "x-amazon-apigateway-policy" = {
+      Version = "2012-10-17"
+      Statement = [
+        {
+          Effect = "Allow"
+          Principal = "*"
+          Action = "execute-api:Invoke"
+          Resource = "execute-api:/*"
+        }
+      ]
+    }
+  })
+  
   # Disable the default endpoint - we'll only use the VPC endpoint
   disable_execute_api_endpoint = false  # Enable for testing, can disable later
 }
