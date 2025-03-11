@@ -213,96 +213,18 @@ class ApiClient:
                     "X-Amz-Date": datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')  # Required for SigV4
                 }
                 
-                # Sign the request with AWS SigV4 if we have credentials
-                if self.credentials:
-                    try:
-                        logger.debug(f"Signing request: {method} {full_url}")
-                        
-                        # Construct the canonical URL for signing (using API Gateway's canonical hostname)
-                        # The canonical URL should include the stage and endpoint
-                        canonical_url = f"{self.canonical_hostname}/{self.environment}/{endpoint.lstrip('/')}"
-                        if query_string:
-                            canonical_url = f"{canonical_url}?{query_string}"
-                            
-                        logger.debug(f"Using canonical URL for signing: {canonical_url}")
-                        logger.debug(f"Using VPC endpoint URL for request: {full_url}")
-                        
-                        # Extract host from canonical URL for the Host header
-                        canonical_parsed_url = urlparse(canonical_url)
-                        canonical_host = canonical_parsed_url.netloc
-                        
-                        # Update the Host header to use the canonical hostname
-                        headers["Host"] = canonical_host
-                        
-                        # Remove any None values from headers
-                        headers = {k: v for k, v in headers.items() if v is not None}
-                        
-                        # Log all headers for debugging
-                        logger.debug(f"Request headers before signing: {headers}")
-                        
-                        # Create AWS request with the canonical URL for signing
-                        aws_request = AWSRequest(
-                            method=method,
-                            url=canonical_url,  # Use canonical URL for signing
-                            headers=headers,
-                            data=request_body
-                        )
-                        
-                        # Log the AWS request details
-                        logger.debug(f"AWS request method: {method}")
-                        logger.debug(f"AWS request URL: {canonical_url}")
-                        logger.debug(f"AWS request headers: {headers}")
-                        logger.debug(f"AWS request body length: {len(request_body) if request_body else 0}")
-                        
-                        # Sign the request - SigV4Auth will add the security token automatically
-                        auth = SigV4Auth(self.credentials, 'execute-api', self.region)
-                        auth.add_auth(aws_request)
-                        
-                        # Log the credentials being used
-                        frozen_creds = self.credentials.get_frozen_credentials()
-                        logger.debug(f"Using credentials - Access Key ID: ...{frozen_creds.access_key[-4:] if frozen_creds.access_key else 'None'}")
-                        logger.debug(f"Security token present: {bool(frozen_creds.token)}")
-                        
-                        # Log the signing details
-                        logger.debug(f"SigV4 service: execute-api")
-                        logger.debug(f"SigV4 region: {self.region}")
-                        
-                        # Get the signed headers
-                        signed_headers = dict(aws_request.headers)
-                        
-                        # Log headers for debugging (safely redacting sensitive info)
-                        safe_headers = {k: v for k, v in signed_headers.items() 
-                                      if k.lower() not in ('authorization', 'x-amz-security-token')}
-                        logger.debug(f"Signed headers: {safe_headers}")
-                        
-                        # Log the Authorization header format (without the actual signature)
-                        if 'Authorization' in signed_headers:
-                            auth_parts = signed_headers['Authorization'].split(' ')
-                            if len(auth_parts) > 1:
-                                logger.debug(f"Authorization header format: {auth_parts[0]} Credential=XXX, SignedHeaders={auth_parts[0].split('SignedHeaders=')[1].split(',')[0] if 'SignedHeaders=' in auth_parts[0] else 'unknown'}, Signature=XXX")
-                        
-                        # Make the request with the signed headers but to the VPC endpoint URL
-                        # This is the key difference - we sign with canonical URL but send to VPC endpoint
-                        response = requests.request(
-                            method=method,
-                            url=full_url,  # Use the VPC endpoint URL for the actual request
-                            headers=signed_headers,  # Use the signed headers
-                            data=request_body,  # Body is already prepared
-                            timeout=10
-                        )
-                    except Exception as e:
-                        logger.error(f"Error signing request: {str(e)}", exc_info=True)
-                        raise  # Fail if we can't sign - don't continue with unsigned request
-                else:
-                    logger.warning("No AWS credentials available - request will fail for AWS_IAM auth")
-                    # Make unsigned request
-                    response = requests.request(
-                        method=method,
-                        url=full_url,
-                        headers=headers,
-                        data=request_body,
-                        timeout=10
-                    )
+                # No SigV4 signing - API Gateway no longer requires authentication
+                logger.debug(f"Making request without SigV4 signing: {method} {full_url}")
+                logger.debug(f"Headers: {headers}")
+                
+                # Make the request directly to the VPC endpoint URL
+                response = requests.request(
+                    method=method,
+                    url=full_url,
+                    headers=headers,
+                    data=request_body,
+                    timeout=10
+                )
                 
                 # Handle the response
                 if response.status_code < 400:

@@ -433,18 +433,15 @@ resource "aws_vpc_endpoint" "api_gateway" {
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
   private_dns_enabled = true
   
-  # Allow access to HTTP API only
+  # Allow all traffic to the HTTP API Gateway
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
         Effect    = "Allow"
         Principal = "*"
-        Action    = "execute-api:Invoke"
-        Resource  = [
-          # HTTP API Gateway only
-          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_apigatewayv2_api.http_api.id}/${var.environment}/*"
-        ]
+        Action    = "*"
+        Resource  = "*"
       }
     ]
   })

@@ -60,8 +60,7 @@ resource "aws_apigatewayv2_route" "get_papers" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /papers"
   
-  # Enable IAM authorization
-  authorization_type = "AWS_IAM"
+  # No authorization - open access within VPC
   
   target = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
@@ -70,8 +69,7 @@ resource "aws_apigatewayv2_route" "get_paper" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /papers/{id}"
   
-  # Enable IAM authorization
-  authorization_type = "AWS_IAM"
+  # No authorization - open access within VPC
   
   target = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
@@ -81,8 +79,7 @@ resource "aws_apigatewayv2_route" "get_authors" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /authors"
   
-  # Enable IAM authorization
-  authorization_type = "AWS_IAM"
+  # No authorization - open access within VPC
   
   target = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
@@ -91,8 +88,7 @@ resource "aws_apigatewayv2_route" "get_author" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /authors/{id}"
   
-  # Enable IAM authorization
-  authorization_type = "AWS_IAM"
+  # No authorization - open access within VPC
   
   target = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
@@ -101,8 +97,7 @@ resource "aws_apigatewayv2_route" "get_paper_authors" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /papers/{id}/authors"
   
-  # Enable IAM authorization
-  authorization_type = "AWS_IAM"
+  # No authorization - open access within VPC
   
   target = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
@@ -112,8 +107,7 @@ resource "aws_apigatewayv2_route" "get_categories" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /categories"
   
-  # Enable IAM authorization
-  authorization_type = "AWS_IAM"
+  # No authorization - open access within VPC
   
   target = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
@@ -122,8 +116,7 @@ resource "aws_apigatewayv2_route" "get_category" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /categories/{code}"
   
-  # Enable IAM authorization
-  authorization_type = "AWS_IAM"
+  # No authorization - open access within VPC
   
   target = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
@@ -133,8 +126,7 @@ resource "aws_apigatewayv2_route" "get_sets" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /sets"
   
-  # Enable IAM authorization
-  authorization_type = "AWS_IAM"
+  # No authorization - open access within VPC
   
   target = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
@@ -143,8 +135,7 @@ resource "aws_apigatewayv2_route" "get_set" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /sets/{id}"
   
-  # Enable IAM authorization
-  authorization_type = "AWS_IAM"
+  # No authorization - open access within VPC
   
   target = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
@@ -153,8 +144,7 @@ resource "aws_apigatewayv2_route" "get_set_by_code" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /sets/code/{code}"
   
-  # Enable IAM authorization
-  authorization_type = "AWS_IAM"
+  # No authorization - open access within VPC
   
   target = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
@@ -164,8 +154,7 @@ resource "aws_apigatewayv2_route" "get_abstract" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /papers/{id}/abstract"
   
-  # Enable IAM authorization
-  authorization_type = "AWS_IAM"
+  # No authorization - open access within VPC
   
   target = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
@@ -174,8 +163,7 @@ resource "aws_apigatewayv2_route" "put_abstract" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "PUT /papers/{id}/abstract"
   
-  # Enable IAM authorization
-  authorization_type = "AWS_IAM"
+  # No authorization - open access within VPC
   
   target = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
@@ -184,8 +172,7 @@ resource "aws_apigatewayv2_route" "delete_abstract" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "DELETE /papers/{id}/abstract"
   
-  # Enable IAM authorization
-  authorization_type = "AWS_IAM"
+  # No authorization - open access within VPC
   
   target = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
