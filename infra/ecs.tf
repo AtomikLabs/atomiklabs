@@ -114,10 +114,11 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
       name  = "arxiv-processor"
       image = "${aws_ecr_repository.daily_processor.repository_url}:arxiv"
       environment = [
-        { name = "API_ENDPOINT", value = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.region}.amazonaws.com/${var.environment}" },
+        # For private APIs, use the VPC endpoint DNS name and include the API ID
+        { name = "API_ENDPOINT", value = "https://${aws_vpc_endpoint.api_gateway.dns_entry[0]["dns_name"]}/${var.environment}" },
+        { name = "X_APIGW_API_ID", value = aws_api_gateway_rest_api.main.id },
         { name = "AWS_REGION", value = var.region },
-        { name = "LOG_LEVEL", value = "TRACE" }, # Enhanced logging level for detailed API request/response tracking
-        { name = "LOG_REQUEST_DETAILS", value = "true" } # Additional flag to enable verbose request logging
+        { name = "LOG_LEVEL", value = "DEBUG" }
       ]
       logConfiguration = {
         logDriver = "awslogs"
