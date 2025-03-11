@@ -50,7 +50,16 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           aws_db_instance.postgresql.arn
         ]
       },
-      # No longer need execute-api:Invoke permissions since we removed IAM auth
+      # Add execute-api:Invoke permissions for the API Gateway
+      {
+        Effect = "Allow"
+        Action = [
+          "execute-api:Invoke"
+        ]
+        Resource = [
+          "${aws_apigatewayv2_api.http_api.execution_arn}/*"
+        ]
+      },
       {
         Effect = "Allow"
         Action = [

@@ -41,6 +41,7 @@ class ApiClient:
             max_retries: Maximum number of retries for API calls
             retry_delay: Initial delay between retries (with exponential backoff)
         """
+        # Use the base URL as provided - could be VPC endpoint or direct API Gateway URL
         self.base_url = base_url.rstrip('/')
         self.max_retries = max_retries
         self.retry_delay = retry_delay
@@ -51,8 +52,8 @@ class ApiClient:
         self.credentials = self.session.get_credentials()
         self.region = self.session.region_name or os.environ.get('AWS_REGION', 'us-west-1')
         
-        # Get API Gateway ID from environment variable
-        self.api_gateway_id = os.environ.get('X_APIGW_API_ID')
+        # Get API Gateway ID from environment variable or use the one from the console
+        self.api_gateway_id = os.environ.get('X_APIGW_API_ID', 'wgwqmoyg2a')
         
         # Check if this is an HTTP API or a REST API
         self.api_type = os.environ.get('API_TYPE', 'REST')
@@ -205,27 +206,16 @@ class ApiClient:
                 parsed_url = urlparse(url)
                 host = parsed_url.netloc
                 
-                # Basic headers required for all requests
-                headers = {
-                    "Content-Type": "application/json",
-                    "User-Agent": "ArxivProcessor/1.0",
-                    "Host": host,  # Required for SigV4
-                    "X-Amz-Date": datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')  # Required for SigV4
-                }
-                
-                # No SigV4 signing - API Gateway no longer requires authentication
-                logger.info(f"Making request without SigV4 signing: {method} {full_url}")
-                logger.info(f"Headers: {headers}")
-                
-                # Remove any headers that might be causing issues
+                # Simplified headers - no authentication
                 headers = {
                     "Content-Type": "application/json",
                     "User-Agent": "ArxivProcessor/1.0"
                 }
                 
-                logger.info(f"Simplified headers: {headers}")
+                logger.info(f"Making request without authentication: {method} {full_url}")
+                logger.info(f"Headers: {headers}")
                 
-                # Make the request directly to the VPC endpoint URL
+                # Make the request to the API Gateway
                 response = requests.request(
                     method=method,
                     url=full_url,
