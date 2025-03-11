@@ -15,7 +15,7 @@ resource "aws_apigatewayv2_api" "http_api" {
   # Disable the default endpoint - we'll only use the VPC endpoint
   disable_execute_api_endpoint = false  # Enable for testing, can disable later
   
-  # Add a policy to restrict access to the VPC endpoint
+  # Route selection expression for HTTP API
   route_selection_expression = "$request.method $request.path"
 }
 
