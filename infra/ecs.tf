@@ -56,7 +56,7 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           "execute-api:Invoke"
         ]
         Resource = [
-          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/*/*/*"
+          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/${var.environment}/*"
         ]
       },
       {

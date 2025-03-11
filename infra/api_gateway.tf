@@ -17,7 +17,7 @@ resource "aws_api_gateway_rest_api" "main" {
         Effect = "Allow"
         Principal = "*"
         Action = "execute-api:Invoke"
-        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/*"
+        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/${var.environment}/*"
         Condition = {
           StringEquals = {
             "aws:SourceVpc": aws_vpc.main.id
@@ -29,7 +29,7 @@ resource "aws_api_gateway_rest_api" "main" {
         Effect = "Allow"
         Principal = "*"
         Action = "execute-api:Invoke"
-        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/*"
+        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/${var.environment}/*"
         Condition = {
           StringEquals = {
             "aws:SourceVpce": aws_vpc_endpoint.api_gateway.id
@@ -48,7 +48,7 @@ resource "aws_api_gateway_rest_api" "main" {
           ]
         }
         Action = "execute-api:Invoke"
-        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/*"
+        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/${var.environment}/*"
       }
     ]
   })

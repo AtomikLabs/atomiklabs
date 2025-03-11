@@ -441,7 +441,7 @@ resource "aws_vpc_endpoint" "api_gateway" {
         Effect    = "Allow"
         Principal = "*"
         Action    = "execute-api:Invoke"
-        Resource  = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/*"
+        Resource  = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/${var.environment}/*"
       }
     ]
   })
