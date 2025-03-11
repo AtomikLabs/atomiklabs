@@ -433,7 +433,7 @@ resource "aws_vpc_endpoint" "api_gateway" {
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
   private_dns_enabled = true
   
-  # Use a wildcard for the API Gateway ID to break the circular dependency
+  # Use the specific API Gateway ID from the local variable
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -441,7 +441,7 @@ resource "aws_vpc_endpoint" "api_gateway" {
         Effect    = "Allow"
         Principal = "*"
         Action    = "execute-api:Invoke"
-        Resource  = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/${var.environment}/*"
+        Resource  = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${local.api_gateway_id}/${var.environment}/*"
       }
     ]
   })
@@ -451,4 +451,4 @@ resource "aws_vpc_endpoint" "api_gateway" {
     Environment = var.environment
     ManagedBy = "terraform"
   })
-} 
+}

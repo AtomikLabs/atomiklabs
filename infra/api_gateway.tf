@@ -1,3 +1,9 @@
+# Define the API Gateway ID as a local variable to ensure consistency
+locals {
+  # Use the existing API Gateway ID if it's already deployed
+  api_gateway_id = "6mrj5i6he8"
+}
+
 resource "aws_api_gateway_rest_api" "main" {
   name        = "${local.resource_prefix}-api-gateway"
   description = "API Gateway for ${var.project} internal services"
@@ -9,6 +15,7 @@ resource "aws_api_gateway_rest_api" "main" {
   }
 
   # Improved resource policy with more permissive permissions to allow ECS tasks
+  # Explicitly use the API Gateway ID to ensure the policy is applied to the correct API
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -17,7 +24,7 @@ resource "aws_api_gateway_rest_api" "main" {
         Effect = "Allow"
         Principal = "*"
         Action = "execute-api:Invoke"
-        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/${var.environment}/*"
+        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${local.api_gateway_id}/${var.environment}/*"
         Condition = {
           StringEquals = {
             "aws:SourceVpc": aws_vpc.main.id
@@ -29,7 +36,7 @@ resource "aws_api_gateway_rest_api" "main" {
         Effect = "Allow"
         Principal = "*"
         Action = "execute-api:Invoke"
-        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/${var.environment}/*"
+        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${local.api_gateway_id}/${var.environment}/*"
         Condition = {
           StringEquals = {
             "aws:SourceVpce": aws_vpc_endpoint.api_gateway.id
@@ -48,7 +55,7 @@ resource "aws_api_gateway_rest_api" "main" {
           ]
         }
         Action = "execute-api:Invoke"
-        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/${var.environment}/*"
+        Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${local.api_gateway_id}/${var.environment}/*"
       }
     ]
   })
@@ -642,4 +649,4 @@ resource "aws_api_gateway_method_settings" "all" {
     throttling_burst_limit = 50      # Limit the number of concurrent requests
     caching_enabled        = false   # Enable caching
   }
-} 
+}
