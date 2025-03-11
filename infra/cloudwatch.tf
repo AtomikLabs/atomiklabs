@@ -3,28 +3,9 @@ resource "aws_cloudwatch_log_group" "arxiv_processor" {
   retention_in_days = 7
 }
 
-# CloudWatch alarms for REST API Gateway
-resource "aws_cloudwatch_metric_alarm" "rest_api_gateway_5xx" {
-  alarm_name          = "${local.resource_prefix}-rest-api-gateway-5xx-errors"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "1"
-  metric_name         = "5XXError"
-  namespace           = "AWS/ApiGateway"
-  period              = "60"
-  statistic           = "Sum"
-  threshold           = "5"
-  alarm_description   = "This alarm monitors REST API Gateway 5XX errors"
-  treat_missing_data  = "notBreaching"
-  
-  dimensions = {
-    ApiName  = aws_api_gateway_rest_api.main.name
-    Stage    = aws_api_gateway_stage.main.stage_name
-  }
-}
-
 # CloudWatch alarms for HTTP API Gateway
-resource "aws_cloudwatch_metric_alarm" "http_api_gateway_5xx" {
-  alarm_name          = "${local.resource_prefix}-http-api-gateway-5xx-errors"
+resource "aws_cloudwatch_metric_alarm" "api_gateway_5xx" {
+  alarm_name          = "${local.resource_prefix}-api-gateway-5xx-errors"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "1"
   metric_name         = "5xx"  # Note: HTTP API uses lowercase metric names
@@ -36,7 +17,7 @@ resource "aws_cloudwatch_metric_alarm" "http_api_gateway_5xx" {
   treat_missing_data  = "notBreaching"
   
   dimensions = {
-    ApiId  = aws_apigatewayv2_api.http_api.id
+    ApiId  = local.http_api_gateway_id
     Stage  = aws_apigatewayv2_stage.dev.name
   }
 }
