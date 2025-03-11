@@ -44,20 +44,27 @@ class ApiClient:
         self.base_url = base_url.rstrip('/')
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self.session = requests.Session()
         
         # Set up AWS credentials for API Gateway authentication
-        self.region = os.environ.get('AWS_REGION', 'us-west-1')
+        # Use the default credential provider chain - much simpler!
+        self.session = boto3.Session()
+        self.credentials = self.session.get_credentials()
+        self.region = self.session.region_name or os.environ.get('AWS_REGION', 'us-west-1')
         
         # Get API Gateway ID from environment variable
         self.api_gateway_id = os.environ.get('X_APIGW_API_ID')
+        
+        # Check if this is an HTTP API or a REST API
+        self.api_type = os.environ.get('API_TYPE', 'REST')
         
         # Extract the environment/stage from the base URL
         # The base URL format is: https://vpce-xxx.execute-api.region.vpce.amazonaws.com/stage
         url_parts = self.base_url.split('/')
         self.environment = url_parts[-1] if len(url_parts) > 3 else 'dev'
         
-        logger.info(f"Extracted environment/stage: {self.environment}")
+        logger.info(f"API Client initialized for {self.api_type} API with ID {self.api_gateway_id}")
+        logger.info(f"Using environment/stage: {self.environment}")
+        logger.info(f"Base URL: {self.base_url}")
         
         # Construct the canonical hostname for API Gateway (for SigV4 signing)
         if self.api_gateway_id:
@@ -69,21 +76,6 @@ class ApiClient:
             base_without_stage = '/'.join(url_parts[:-1]) if len(url_parts) > 3 else self.base_url
             self.canonical_hostname = base_without_stage
             logger.warning(f"X_APIGW_API_ID not found in environment variables. Using VPC endpoint URL for signing: {self.canonical_hostname}")
-        
-        # Configure boto3 with explicit credential lookup
-        # IMPORTANT: Use the correct credentials endpoint for ECS tasks
-        # The identity-credentials/ec2/security-credentials/ec2-instance endpoint is for internal use only
-        # We need to use the iam/security-credentials/{role} endpoint for API Gateway access
-        
-        # Check if we're running in an ECS task
-        if 'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI' in os.environ:
-            logger.info("Running with ECS task credentials")
-            # Override the credentials provider to use the correct endpoint
-            # This ensures we're using the task role credentials, not the EC2 instance identity credentials
-            os.environ['AWS_CONTAINER_CREDENTIALS_FULL_URI'] = 'http://169.254.170.2' + os.environ['AWS_CONTAINER_CREDENTIALS_RELATIVE_URI']
-            
-        self.boto_session = boto3.Session(region_name=self.region)
-        self.credentials = self.boto_session.get_credentials()
         
         # Log credential information (safely)
         if self.credentials:
@@ -504,7 +496,7 @@ class ApiClient:
             Response from the API
         """
         data = {"abstract": abstract}
-        return self._make_request('PUT', f'/abstracts/{paper_id}', data=data)
+        return self._make_request('PUT', f'/papers/{paper_id}/abstract', data=data)
     
     def create_author(self, author: Dict[str, Any]) -> Dict[str, Any]:
         """

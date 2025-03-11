@@ -56,8 +56,9 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           "execute-api:Invoke"
         ]
         Resource = [
-          # Use the specific API Gateway ID instead of a wildcard
-          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${local.api_gateway_id}/${var.environment}/*"
+          # Allow access to both the old REST API and the new HTTP API
+          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${local.api_gateway_id}/${var.environment}/*",
+          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_apigatewayv2_api.http_api.id}/${var.environment}/*"
         ]
       },
       {
@@ -109,15 +110,16 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
   task_role_arn           = aws_iam_role.ecs_task_role.arn
   execution_role_arn      = aws_iam_role.ecs_execution_role.arn
 
-  # Updated container definitions with enhanced logging for better troubleshooting
+  # Updated container definitions to use the new HTTP API Gateway
   container_definitions = jsonencode([
     {
       name  = "arxiv-processor"
       image = "${aws_ecr_repository.daily_processor.repository_url}:arxiv"
       environment = [
-        # For private APIs, use the VPC endpoint DNS name and include the API ID
+        # For HTTP API, use the VPC endpoint DNS name and include the API ID
         { name = "API_ENDPOINT", value = "https://${aws_vpc_endpoint.api_gateway.dns_entry[0]["dns_name"]}/${var.environment}" },
-        { name = "X_APIGW_API_ID", value = aws_api_gateway_rest_api.main.id },
+        { name = "X_APIGW_API_ID", value = aws_apigatewayv2_api.http_api.id },
+        { name = "API_TYPE", value = "HTTP" },  # Indicate this is an HTTP API, not a REST API
         { name = "AWS_REGION", value = var.region },
         { name = "LOG_LEVEL", value = "DEBUG" }
       ]

@@ -28,14 +28,24 @@ output "postgresql_password_param" {
   value       = aws_ssm_parameter.db_password.name
 }
 
-output "api_gateway_url" {
-  description = "The URL of the API Gateway (only accessible from within VPC via endpoint)"
+output "rest_api_gateway_url" {
+  description = "The URL of the REST API Gateway (only accessible from within VPC via endpoint)"
   value       = "${aws_api_gateway_deployment.main.invoke_url}${aws_api_gateway_stage.main.stage_name}/"
 }
 
-output "api_gateway_id" {
+output "rest_api_gateway_id" {
   description = "The ID of the API Gateway REST API"
   value       = aws_api_gateway_rest_api.main.id
+}
+
+output "http_api_gateway_url" {
+  description = "The URL of the HTTP API Gateway (only accessible from within VPC via endpoint)"
+  value       = "${aws_apigatewayv2_api.http_api.api_endpoint}/${aws_apigatewayv2_stage.dev.name}"
+}
+
+output "http_api_gateway_id" {
+  description = "The ID of the API Gateway HTTP API"
+  value       = aws_apigatewayv2_api.http_api.id
 }
 
 output "api_gateway_vpc_endpoint_id" {
