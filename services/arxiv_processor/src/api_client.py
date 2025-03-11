@@ -49,6 +49,18 @@ class ApiClient:
         # Set up AWS credentials for API Gateway authentication
         self.region = os.environ.get('AWS_REGION', 'us-west-1')
         
+        # Get API Gateway ID from environment variable
+        self.api_gateway_id = os.environ.get('X_APIGW_API_ID')
+        self.environment = self.base_url.split('/')[-1] if '/' in self.base_url else 'dev'
+        
+        # Construct the canonical hostname for API Gateway (for SigV4 signing)
+        if self.api_gateway_id:
+            self.canonical_hostname = f"https://{self.api_gateway_id}.execute-api.{self.region}.amazonaws.com/{self.environment}"
+            logger.info(f"Using canonical hostname for SigV4 signing: {self.canonical_hostname}")
+        else:
+            self.canonical_hostname = self.base_url
+            logger.warning("X_APIGW_API_ID not found in environment variables. Using VPC endpoint URL for signing.")
+        
         # Configure boto3 with explicit credential lookup
         self.boto_session = boto3.Session(region_name=self.region)
         self.credentials = self.boto_session.get_credentials()
@@ -196,10 +208,26 @@ class ApiClient:
                     try:
                         logger.debug(f"Signing request: {method} {full_url}")
                         
-                        # Create AWS request with the EXACT same URL we'll use for the actual request
+                        # Construct the canonical URL for signing (using API Gateway's canonical hostname)
+                        canonical_endpoint = f"{endpoint.lstrip('/')}"
+                        canonical_url = f"{self.canonical_hostname}/{canonical_endpoint}"
+                        if query_string:
+                            canonical_url = f"{canonical_url}?{query_string}"
+                            
+                        logger.debug(f"Using canonical URL for signing: {canonical_url}")
+                        logger.debug(f"Using VPC endpoint URL for request: {full_url}")
+                        
+                        # Extract host from canonical URL for the Host header
+                        canonical_parsed_url = urlparse(canonical_url)
+                        canonical_host = canonical_parsed_url.netloc
+                        
+                        # Update the Host header to use the canonical hostname
+                        headers["Host"] = canonical_host
+                        
+                        # Create AWS request with the canonical URL for signing
                         aws_request = AWSRequest(
                             method=method,
-                            url=full_url,
+                            url=canonical_url,  # Use canonical URL for signing
                             headers=headers,
                             data=request_body
                         )
@@ -216,11 +244,11 @@ class ApiClient:
                                       if k.lower() not in ('authorization', 'x-amz-security-token')}
                         logger.debug(f"Signed headers: {safe_headers}")
                         
-                        # Make the request with the signed headers and full URL 
-                        # CRITICAL: Use the exact same URL and headers that were used for signing
+                        # Make the request with the signed headers but to the VPC endpoint URL
+                        # This is the key difference - we sign with canonical URL but send to VPC endpoint
                         response = requests.request(
                             method=method,
-                            url=full_url,  # Use the full URL with query params
+                            url=full_url,  # Use the VPC endpoint URL for the actual request
                             headers=signed_headers,  # Use the signed headers
                             data=request_body,  # Body is already prepared
                             timeout=10
@@ -511,4 +539,4 @@ class ApiClient:
         except Exception as e:
             logger.error(f"Error getting or creating set: {e}")
             # Return a dummy UUID if we can't get or create the set
-            return str(uuid.uuid4()) 
+            return str(uuid.uuid4())
