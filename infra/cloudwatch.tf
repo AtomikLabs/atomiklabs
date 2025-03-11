@@ -17,7 +17,7 @@ resource "aws_cloudwatch_metric_alarm" "api_gateway_5xx" {
   treat_missing_data  = "notBreaching"
   
   dimensions = {
-    ApiId  = local.http_api_gateway_id
+    ApiId  = aws_apigatewayv2_api.http_api.id
     Stage  = aws_apigatewayv2_stage.dev.name
   }
 }

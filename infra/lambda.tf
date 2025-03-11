@@ -236,7 +236,7 @@ resource "aws_iam_role_policy" "lambda_arxiv_api" {
           "execute-api:Invoke"
         ]
         Resource = [
-          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${local.http_api_gateway_id}/${var.environment}/*"
+          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_apigatewayv2_api.http_api.id}/${var.environment}/*"
         ]
       },
       {

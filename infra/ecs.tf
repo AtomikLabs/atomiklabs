@@ -57,7 +57,7 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
         ]
         Resource = [
           # Only allow access to the HTTP API
-          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${local.http_api_gateway_id}/${var.environment}/*"
+          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_apigatewayv2_api.http_api.id}/${var.environment}/*"
         ]
       },
       {
@@ -117,7 +117,7 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
       environment = [
         # For HTTP API, use the VPC endpoint DNS name and include the API ID
         { name = "API_ENDPOINT", value = "https://${aws_vpc_endpoint.api_gateway.dns_entry[0]["dns_name"]}/${var.environment}" },
-        { name = "X_APIGW_API_ID", value = local.http_api_gateway_id },
+        { name = "X_APIGW_API_ID", value = aws_apigatewayv2_api.http_api.id },
         { name = "API_TYPE", value = "HTTP" },  # Indicate this is an HTTP API, not a REST API
         { name = "AWS_REGION", value = var.region },
         { name = "LOG_LEVEL", value = "DEBUG" }

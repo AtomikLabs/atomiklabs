@@ -35,7 +35,7 @@ output "api_gateway_url" {
 
 output "api_gateway_id" {
   description = "The ID of the API Gateway HTTP API"
-  value       = local.http_api_gateway_id
+  value       = aws_apigatewayv2_api.http_api.id
 }
 
 output "api_gateway_vpc_endpoint_id" {

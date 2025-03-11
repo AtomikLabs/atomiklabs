@@ -443,7 +443,7 @@ resource "aws_vpc_endpoint" "api_gateway" {
         Action    = "execute-api:Invoke"
         Resource  = [
           # HTTP API Gateway only
-          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${local.http_api_gateway_id}/${var.environment}/*"
+          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_apigatewayv2_api.http_api.id}/${var.environment}/*"
         ]
       }
     ]

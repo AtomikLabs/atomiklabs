@@ -5,13 +5,20 @@ resource "aws_apigatewayv2_api" "http_api" {
   name          = "${local.resource_prefix}-http-api"
   protocol_type = "HTTP"
   
+  # Add explicit resource policy to allow access from VPC endpoint and ECS task role
+  cors_configuration {
+    allow_origins = ["*"]
+    allow_methods = ["GET", "POST", "PUT", "DELETE"]
+    allow_headers = ["Content-Type", "Authorization", "X-Amz-Date", "X-Api-Key", "X-Amz-Security-Token"]
+  }
+  
   # Disable the default endpoint - we'll only use the VPC endpoint
-  disable_execute_api_endpoint = true
+  disable_execute_api_endpoint = false  # Enable for testing, can disable later
 }
 
 # Create a stage
 resource "aws_apigatewayv2_stage" "dev" {
-  api_id      = local.http_api_gateway_id
+  api_id      = aws_apigatewayv2_api.http_api.id  # Use direct reference to avoid circular dependency
   name        = var.environment
   auto_deploy = true
   
@@ -50,7 +57,7 @@ resource "aws_cloudwatch_log_group" "http_api_gateway" {
 
 # Papers routes
 resource "aws_apigatewayv2_route" "get_papers" {
-  api_id    = local.http_api_gateway_id
+  api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /papers"
   
   # Enable IAM authorization
@@ -60,7 +67,7 @@ resource "aws_apigatewayv2_route" "get_papers" {
 }
 
 resource "aws_apigatewayv2_route" "get_paper" {
-  api_id    = local.http_api_gateway_id
+  api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /papers/{id}"
   
   # Enable IAM authorization
@@ -71,7 +78,7 @@ resource "aws_apigatewayv2_route" "get_paper" {
 
 # Authors routes
 resource "aws_apigatewayv2_route" "get_authors" {
-  api_id    = local.http_api_gateway_id
+  api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /authors"
   
   # Enable IAM authorization
@@ -81,7 +88,7 @@ resource "aws_apigatewayv2_route" "get_authors" {
 }
 
 resource "aws_apigatewayv2_route" "get_author" {
-  api_id    = local.http_api_gateway_id
+  api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /authors/{id}"
   
   # Enable IAM authorization
@@ -91,7 +98,7 @@ resource "aws_apigatewayv2_route" "get_author" {
 }
 
 resource "aws_apigatewayv2_route" "get_paper_authors" {
-  api_id    = local.http_api_gateway_id
+  api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /papers/{id}/authors"
   
   # Enable IAM authorization
@@ -102,7 +109,7 @@ resource "aws_apigatewayv2_route" "get_paper_authors" {
 
 # Categories routes
 resource "aws_apigatewayv2_route" "get_categories" {
-  api_id    = local.http_api_gateway_id
+  api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /categories"
   
   # Enable IAM authorization
@@ -112,7 +119,7 @@ resource "aws_apigatewayv2_route" "get_categories" {
 }
 
 resource "aws_apigatewayv2_route" "get_category" {
-  api_id    = local.http_api_gateway_id
+  api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /categories/{code}"
   
   # Enable IAM authorization
@@ -123,7 +130,7 @@ resource "aws_apigatewayv2_route" "get_category" {
 
 # Sets routes
 resource "aws_apigatewayv2_route" "get_sets" {
-  api_id    = local.http_api_gateway_id
+  api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /sets"
   
   # Enable IAM authorization
@@ -133,7 +140,7 @@ resource "aws_apigatewayv2_route" "get_sets" {
 }
 
 resource "aws_apigatewayv2_route" "get_set" {
-  api_id    = local.http_api_gateway_id
+  api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /sets/{id}"
   
   # Enable IAM authorization
@@ -143,7 +150,7 @@ resource "aws_apigatewayv2_route" "get_set" {
 }
 
 resource "aws_apigatewayv2_route" "get_set_by_code" {
-  api_id    = local.http_api_gateway_id
+  api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /sets/code/{code}"
   
   # Enable IAM authorization
@@ -154,7 +161,7 @@ resource "aws_apigatewayv2_route" "get_set_by_code" {
 
 # Abstract routes
 resource "aws_apigatewayv2_route" "get_abstract" {
-  api_id    = local.http_api_gateway_id
+  api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "GET /papers/{id}/abstract"
   
   # Enable IAM authorization
@@ -164,7 +171,7 @@ resource "aws_apigatewayv2_route" "get_abstract" {
 }
 
 resource "aws_apigatewayv2_route" "put_abstract" {
-  api_id    = local.http_api_gateway_id
+  api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "PUT /papers/{id}/abstract"
   
   # Enable IAM authorization
@@ -174,7 +181,7 @@ resource "aws_apigatewayv2_route" "put_abstract" {
 }
 
 resource "aws_apigatewayv2_route" "delete_abstract" {
-  api_id    = local.http_api_gateway_id
+  api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "DELETE /papers/{id}/abstract"
   
   # Enable IAM authorization
@@ -185,7 +192,7 @@ resource "aws_apigatewayv2_route" "delete_abstract" {
 
 # Create the Lambda integration
 resource "aws_apigatewayv2_integration" "lambda_integration" {
-  api_id           = local.http_api_gateway_id
+  api_id           = aws_apigatewayv2_api.http_api.id
   integration_type = "AWS_PROXY"
   
   integration_uri    = aws_lambda_function.arxiv_api.invoke_arn
