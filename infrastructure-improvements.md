@@ -671,4 +671,5 @@ This document outlines the step-by-step plan to address the infrastructure limit
     - This ensures the ECS task has permission to invoke any API Gateway in the account
   - Updated the API Gateway policy to be more explicit about allowing access from the ECS task role:
     - Added comments to clarify that the IAM role statement allows access without requiring a specific source VPC or VPC endpoint
+    - Updated the VPC condition to directly reference the custom VPC (`aws_vpc.main.id`) instead of the data source
   - These changes resolve the 403 Forbidden authentication errors when the ECS task tries to access the API Gateway

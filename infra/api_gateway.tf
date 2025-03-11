@@ -20,7 +20,7 @@ resource "aws_api_gateway_rest_api" "main" {
         Resource = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/*"
         Condition = {
           StringEquals = {
-            "aws:SourceVpc": data.aws_vpc.default.id
+            "aws:SourceVpc": aws_vpc.main.id
           }
         }
       },
@@ -36,7 +36,7 @@ resource "aws_api_gateway_rest_api" "main" {
           }
         }
       },
-      # Allow access from specific IAM roles with specific resource scope
+      # Allow access from specific IAM roles without any conditions
       # This statement allows the ECS task role to access the API Gateway
       # without requiring a specific source VPC or VPC endpoint
       {
