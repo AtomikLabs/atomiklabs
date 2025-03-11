@@ -662,3 +662,13 @@ This document outlines the step-by-step plan to address the infrastructure limit
     - This helps prevent issues with resources still using the security groups during updates
   - These changes help resolve errors related to ENI detachment and subnet group deletion
   - The approach ensures a cleaner deployment and update process with fewer dependency issues
+
+- Fixed API Gateway access issues:
+  - Updated the API_ENDPOINT environment variable in the ECS task definition to match the exact format being used in the application:
+    - Removed the trailing slash to match the actual URL format being used
+  - Updated the ECS task role policy to use a more permissive resource pattern for API Gateway access:
+    - Changed from `arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.main.id}/*/*/*` to `arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/*/*/*`
+    - This ensures the ECS task has permission to invoke any API Gateway in the account
+  - Updated the API Gateway policy to be more explicit about allowing access from the ECS task role:
+    - Added comments to clarify that the IAM role statement allows access without requiring a specific source VPC or VPC endpoint
+  - These changes resolve the 403 Forbidden authentication errors when the ECS task tries to access the API Gateway

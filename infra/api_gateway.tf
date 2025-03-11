@@ -8,8 +8,7 @@ resource "aws_api_gateway_rest_api" "main" {
     vpc_endpoint_ids = [aws_vpc_endpoint.api_gateway.id]
   }
 
-  # Improved resource policy with more restrictive permissions
-  # Using wildcard for API Gateway ID to avoid self-referential blocks
+  # Improved resource policy with more permissive permissions to allow ECS tasks
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -38,6 +37,8 @@ resource "aws_api_gateway_rest_api" "main" {
         }
       },
       # Allow access from specific IAM roles with specific resource scope
+      # This statement allows the ECS task role to access the API Gateway
+      # without requiring a specific source VPC or VPC endpoint
       {
         Effect = "Allow"
         Principal = {
