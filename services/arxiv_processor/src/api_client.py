@@ -51,15 +51,24 @@ class ApiClient:
         
         # Get API Gateway ID from environment variable
         self.api_gateway_id = os.environ.get('X_APIGW_API_ID')
-        self.environment = self.base_url.split('/')[-1] if '/' in self.base_url else 'dev'
+        
+        # Extract the environment/stage from the base URL
+        # The base URL format is: https://vpce-xxx.execute-api.region.vpce.amazonaws.com/stage
+        url_parts = self.base_url.split('/')
+        self.environment = url_parts[-1] if len(url_parts) > 3 else 'dev'
+        
+        logger.info(f"Extracted environment/stage: {self.environment}")
         
         # Construct the canonical hostname for API Gateway (for SigV4 signing)
         if self.api_gateway_id:
-            self.canonical_hostname = f"https://{self.api_gateway_id}.execute-api.{self.region}.amazonaws.com/{self.environment}"
+            # The canonical URL should be: https://api-id.execute-api.region.amazonaws.com/stage
+            self.canonical_hostname = f"https://{self.api_gateway_id}.execute-api.{self.region}.amazonaws.com"
             logger.info(f"Using canonical hostname for SigV4 signing: {self.canonical_hostname}")
         else:
-            self.canonical_hostname = self.base_url
-            logger.warning("X_APIGW_API_ID not found in environment variables. Using VPC endpoint URL for signing.")
+            # Fall back to using the VPC endpoint URL without the stage
+            base_without_stage = '/'.join(url_parts[:-1]) if len(url_parts) > 3 else self.base_url
+            self.canonical_hostname = base_without_stage
+            logger.warning(f"X_APIGW_API_ID not found in environment variables. Using VPC endpoint URL for signing: {self.canonical_hostname}")
         
         # Configure boto3 with explicit credential lookup
         self.boto_session = boto3.Session(region_name=self.region)
@@ -209,8 +218,8 @@ class ApiClient:
                         logger.debug(f"Signing request: {method} {full_url}")
                         
                         # Construct the canonical URL for signing (using API Gateway's canonical hostname)
-                        canonical_endpoint = f"{endpoint.lstrip('/')}"
-                        canonical_url = f"{self.canonical_hostname}/{canonical_endpoint}"
+                        # The canonical URL should include the stage and endpoint
+                        canonical_url = f"{self.canonical_hostname}/{self.environment}/{endpoint.lstrip('/')}"
                         if query_string:
                             canonical_url = f"{canonical_url}?{query_string}"
                             
@@ -224,6 +233,12 @@ class ApiClient:
                         # Update the Host header to use the canonical hostname
                         headers["Host"] = canonical_host
                         
+                        # Add additional headers that might be required for SigV4 authentication
+                        headers["X-Amz-Security-Token"] = self.credentials.token if hasattr(self.credentials, "token") else None
+                        
+                        # Log all headers for debugging
+                        logger.debug(f"Request headers before signing: {headers}")
+                        
                         # Create AWS request with the canonical URL for signing
                         aws_request = AWSRequest(
                             method=method,
@@ -232,9 +247,19 @@ class ApiClient:
                             data=request_body
                         )
                         
+                        # Log the AWS request details
+                        logger.debug(f"AWS request method: {method}")
+                        logger.debug(f"AWS request URL: {canonical_url}")
+                        logger.debug(f"AWS request headers: {headers}")
+                        logger.debug(f"AWS request body length: {len(request_body) if request_body else 0}")
+                        
                         # Sign the request
                         auth = SigV4Auth(self.credentials, 'execute-api', self.region)
                         auth.add_auth(aws_request)
+                        
+                        # Log the signing details
+                        logger.debug(f"SigV4 service: execute-api")
+                        logger.debug(f"SigV4 region: {self.region}")
                         
                         # Get the signed headers
                         signed_headers = dict(aws_request.headers)
@@ -243,6 +268,12 @@ class ApiClient:
                         safe_headers = {k: v for k, v in signed_headers.items() 
                                       if k.lower() not in ('authorization', 'x-amz-security-token')}
                         logger.debug(f"Signed headers: {safe_headers}")
+                        
+                        # Log the Authorization header format (without the actual signature)
+                        if 'Authorization' in signed_headers:
+                            auth_parts = signed_headers['Authorization'].split(' ')
+                            if len(auth_parts) > 1:
+                                logger.debug(f"Authorization header format: {auth_parts[0]} Credential=XXX, SignedHeaders={auth_parts[0].split('SignedHeaders=')[1].split(',')[0] if 'SignedHeaders=' in auth_parts[0] else 'unknown'}, Signature=XXX")
                         
                         # Make the request with the signed headers but to the VPC endpoint URL
                         # This is the key difference - we sign with canonical URL but send to VPC endpoint
