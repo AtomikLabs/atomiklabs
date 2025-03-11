@@ -115,8 +115,8 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
       name  = "arxiv-processor"
       image = "${aws_ecr_repository.daily_processor.repository_url}:arxiv"
       environment = [
-        # For HTTP API, use the VPC endpoint DNS name and include the API ID
-        { name = "API_ENDPOINT", value = "https://${aws_vpc_endpoint.api_gateway.dns_entry[0]["dns_name"]}/${var.environment}" },
+        # Use the direct API Gateway URL from the output
+        { name = "API_ENDPOINT", value = "${aws_apigatewayv2_api.http_api.api_endpoint}/${aws_apigatewayv2_stage.dev.name}" },
         { name = "X_APIGW_API_ID", value = aws_apigatewayv2_api.http_api.id },
         { name = "API_TYPE", value = "HTTP" },  # Indicate this is an HTTP API, not a REST API
         { name = "AWS_REGION", value = var.region },
