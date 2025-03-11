@@ -108,6 +108,7 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
   task_role_arn           = aws_iam_role.ecs_task_role.arn
   execution_role_arn      = aws_iam_role.ecs_execution_role.arn
 
+  # Updated container definitions with enhanced logging for better troubleshooting
   container_definitions = jsonencode([
     {
       name  = "arxiv-processor"
@@ -115,7 +116,8 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
       environment = [
         { name = "API_ENDPOINT", value = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.region}.amazonaws.com/${var.environment}" },
         { name = "AWS_REGION", value = var.region },
-        { name = "LOG_LEVEL", value = "DEBUG" }
+        { name = "LOG_LEVEL", value = "TRACE" }, # Enhanced logging level for detailed API request/response tracking
+        { name = "LOG_REQUEST_DETAILS", value = "true" } # Additional flag to enable verbose request logging
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -136,6 +138,9 @@ resource "aws_ecs_service" "arxiv_processor" {
   task_definition = aws_ecs_task_definition.arxiv_processor.arn
   desired_count   = 0  # Set to 0 initially, will be triggered by EventBridge
   launch_type     = "FARGATE"
+  
+  # Force a new deployment to use the latest task definition with enhanced logging
+  force_new_deployment = true
 
   # Configure network settings to use the VPC
   network_configuration {

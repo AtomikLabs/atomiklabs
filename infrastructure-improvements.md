@@ -673,3 +673,52 @@ This document outlines the step-by-step plan to address the infrastructure limit
     - Added comments to clarify that the IAM role statement allows access without requiring a specific source VPC or VPC endpoint
     - Updated the VPC condition to directly reference the custom VPC (`aws_vpc.main.id`) instead of the data source
   - These changes resolve the 403 Forbidden authentication errors when the ECS task tries to access the API Gateway
+
+## API Gateway Access Issues
+
+### Problem
+
+The ECS task is encountering 403 Forbidden errors when trying to access the API Gateway. The logs show an "INVALID_API_KEY" error type, despite the API Gateway being configured for AWS IAM authentication.
+
+### Solution
+
+1. Removed the trailing slash from the `API_ENDPOINT` environment variable in the ECS task definition
+2. Modified the ECS task role policy to allow broader access to any API Gateway in the account by changing the resource pattern
+3. Updated the API Gateway policy to explicitly allow access from the ECS task role without requiring a specific source VPC or VPC endpoint
+4. Directly referenced the custom VPC (`aws_vpc.main.id`) instead of using a data source for the VPC condition
+5. Ensured the ECS service is redeployed to use the updated task definition
+
+### Implementation
+
+- The API Gateway is correctly configured with AWS IAM authorization
+- The ECS task role has the appropriate permissions to invoke the API Gateway:
+
+```hcl
+{
+  "Effect": "Allow",
+  "Action": [
+    "execute-api:Invoke"
+  ],
+  "Resource": [
+    "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/*/*/*"
+  ]
+}
+```
+
+- The API Gateway policy includes a statement specifically allowing the ECS task role:
+
+```hcl
+{
+  "Effect": "Allow",
+  "Principal": {
+    "AWS": [
+      "aws_iam_role.ecs_task_role.arn",
+      "aws_iam_role.lambda_arxiv_api.arn"
+    ]
+  },
+  "Action": "execute-api:Invoke",
+  "Resource": "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/*"
+}
+```
+
+This configuration ensures proper authentication between the ECS task and the API Gateway using AWS IAM.
