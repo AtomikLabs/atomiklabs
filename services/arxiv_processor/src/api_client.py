@@ -71,21 +71,30 @@ class ApiClient:
             logger.warning(f"X_APIGW_API_ID not found in environment variables. Using VPC endpoint URL for signing: {self.canonical_hostname}")
         
         # Configure boto3 with explicit credential lookup
+        # IMPORTANT: Use the correct credentials endpoint for ECS tasks
+        # The identity-credentials/ec2/security-credentials/ec2-instance endpoint is for internal use only
+        # We need to use the iam/security-credentials/{role} endpoint for API Gateway access
+        
+        # Check if we're running in an ECS task
+        if 'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI' in os.environ:
+            logger.info("Running with ECS task credentials")
+            # Override the credentials provider to use the correct endpoint
+            # This ensures we're using the task role credentials, not the EC2 instance identity credentials
+            os.environ['AWS_CONTAINER_CREDENTIALS_FULL_URI'] = 'http://169.254.170.2' + os.environ['AWS_CONTAINER_CREDENTIALS_RELATIVE_URI']
+            
         self.boto_session = boto3.Session(region_name=self.region)
         self.credentials = self.boto_session.get_credentials()
         
         # Log credential information (safely)
         if self.credentials:
             cred_type = self.credentials.__class__.__name__
-            access_key_preview = "..." + str(self.credentials.access_key)[-4:] if hasattr(self.credentials, "access_key") else "None"
+            frozen_creds = self.credentials.get_frozen_credentials()
+            access_key_preview = "..." + frozen_creds.access_key[-4:] if frozen_creds.access_key else "None"
             logger.info(f"AWS credentials initialized for region {self.region} (Type: {cred_type}, Key: {access_key_preview})")
+            logger.info(f"Security token present: {bool(frozen_creds.token)}")
             
-            # Check if we're running with task credentials
-            if 'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI' in os.environ:
-                logger.info("Running with ECS task credentials")
-                
             # Verify credentials are valid
-            if not self.credentials.get_frozen_credentials().access_key:
+            if not frozen_creds.access_key:
                 logger.error("Credentials found but access key is empty")
         else:
             logger.warning("No AWS credentials found for API Gateway authentication")
