@@ -233,8 +233,8 @@ class ApiClient:
                         # Update the Host header to use the canonical hostname
                         headers["Host"] = canonical_host
                         
-                        # Add additional headers that might be required for SigV4 authentication
-                        headers["X-Amz-Security-Token"] = self.credentials.token if hasattr(self.credentials, "token") else None
+                        # Remove any None values from headers
+                        headers = {k: v for k, v in headers.items() if v is not None}
                         
                         # Log all headers for debugging
                         logger.debug(f"Request headers before signing: {headers}")
@@ -253,9 +253,14 @@ class ApiClient:
                         logger.debug(f"AWS request headers: {headers}")
                         logger.debug(f"AWS request body length: {len(request_body) if request_body else 0}")
                         
-                        # Sign the request
+                        # Sign the request - SigV4Auth will add the security token automatically
                         auth = SigV4Auth(self.credentials, 'execute-api', self.region)
                         auth.add_auth(aws_request)
+                        
+                        # Log the credentials being used
+                        frozen_creds = self.credentials.get_frozen_credentials()
+                        logger.debug(f"Using credentials - Access Key ID: ...{frozen_creds.access_key[-4:] if frozen_creds.access_key else 'None'}")
+                        logger.debug(f"Security token present: {bool(frozen_creds.token)}")
                         
                         # Log the signing details
                         logger.debug(f"SigV4 service: execute-api")

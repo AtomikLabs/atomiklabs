@@ -56,7 +56,8 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           "execute-api:Invoke"
         ]
         Resource = [
-          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:*/${var.environment}/*"
+          # Use the specific API Gateway ID instead of a wildcard
+          "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${local.api_gateway_id}/${var.environment}/*"
         ]
       },
       {
@@ -149,4 +150,4 @@ resource "aws_ecs_service" "arxiv_processor" {
     security_groups  = [aws_security_group.ecs_tasks.id]
     assign_public_ip = false  # Ensure tasks use private IPs only to route through VPC endpoints
   }
-} 
+}
