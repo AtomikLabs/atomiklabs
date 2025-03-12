@@ -57,7 +57,7 @@ s3 = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb').Table(DYNAMODB_TABLE)
 
 cs_categories_inverted = {
-    "Computer Science - Artifical Intelligence": "AI",
+    "Computer Science - Artificial Intelligence": "AI",
     "Computer Science - Hardware Architecture": "AR",
     "Computer Science - Computational Complexity": "CC",
     "Computer Science - Computational Engineering, Finance, and Science": "CE",
