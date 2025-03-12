@@ -117,13 +117,12 @@ def lambda_handler(event, context, *, ssm_client=None, s3_client=None, ses_clien
         today = datetime.now(pst)
         logger.info(f"Current time (PST): {today}")
         
-        arxiv_date = (today - timedelta(days=config['back_date'])).strftime("%Y-%m-%d")  # Use back_date from SSM
-        today_str = today.strftime("%Y-%m-%d")  # NVD reports from today
-        logger.info(f"Looking for ArXiv summaries from: {arxiv_date}")
+        today_str = today.strftime("%Y-%m-%d")  # Today's date for both ArXiv and NVD
+        logger.info(f"Looking for ArXiv summaries from: {today_str}")
         logger.info(f"Looking for NVD reports from: {today_str}")
         
-        # Get ArXiv summaries using back_date from SSM
-        arxiv_path = f"newsletters/{arxiv_date}/"
+        # Get ArXiv summaries from today
+        arxiv_path = f"newsletters/{today_str}/"
         logger.info(f"ArXiv path: {arxiv_path}")
         arxiv_files = get_s3_files(config['s3_bucket'], arxiv_path, s3_client=s3_client)
         logger.info(f"Found {len(arxiv_files)} arxiv files: {[f['filename'] for f in arxiv_files]}")
@@ -138,7 +137,7 @@ def lambda_handler(event, context, *, ssm_client=None, s3_client=None, ses_clien
         logger.info(f"Total files to send: {len(all_files)}")
         
         if not all_files:
-            logger.warning(f"No reports found for arxiv({arxiv_date}) or nvd({today_str})")
+            logger.warning(f"No reports found for arxiv({today_str}) or nvd({today_str})")
             return {
                 'statusCode': 200,
                 'body': 'No reports to send'
@@ -147,7 +146,7 @@ def lambda_handler(event, context, *, ssm_client=None, s3_client=None, ses_clien
         body = f"Daily Summary for {today_str}\n\n"
         
         if arxiv_files:
-            body += f"Attached are your arXiv research summaries from {arxiv_date}.\n"
+            body += f"Attached are your arXiv research summaries from {today_str}.\n"
         if nvd_files:
             body += "Attached is today's NVD vulnerability report.\n"
             

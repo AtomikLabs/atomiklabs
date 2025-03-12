@@ -348,6 +348,7 @@ def create_research_summary(records: list, date: str) -> dict:
 def main():
     base_url = "http://export.arxiv.org/oai2"
     today = datetime.today()
+    today_str = today.strftime("%Y-%m-%d")  # Today's date for file storage
     
     for i in range(BACK_DATE):
         date = (today - timedelta(days=i+1)).strftime("%Y-%m-%d")
@@ -369,8 +370,8 @@ def main():
             for record in all_records:
                 store_paper_metadata(record)
             
-            # Create and upload summary documents
-            summary_files = create_research_summary(all_records, date)
+            # Create and upload summary documents - use today's date for storage
+            summary_files = create_research_summary(all_records, today_str)
             
             if summary_files:
                 logging.info(f"Successfully processed {len(all_records)} papers for {date}")
