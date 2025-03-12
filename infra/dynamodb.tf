@@ -1,3 +1,7 @@
+locals {
+  metadata_table_name = "${local.resource_prefix}-metadata-${local.resource_suffix}"
+}
+
 resource "aws_dynamodb_table" "newsletter_metadata" {
   name           = local.metadata_table_name
   billing_mode   = "PAY_PER_REQUEST"
