@@ -148,7 +148,7 @@ resource "aws_dlm_lifecycle_policy" "neo4j_ebs_snapshot" {
 
 # IAM role for DLM lifecycle policy
 resource "aws_iam_role" "dlm_lifecycle_role" {
-  name = "${local.resource_prefix}-dlm-lifecycle-role-${local.resource_suffix}"
+  name = "${local.resource_prefix}-dlm-role-${substr(local.resource_suffix, 0, 8)}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -165,7 +165,7 @@ resource "aws_iam_role" "dlm_lifecycle_role" {
 }
 
 resource "aws_iam_role_policy" "dlm_lifecycle" {
-  name = "${local.resource_prefix}-dlm-lifecycle-policy-${local.resource_suffix}"
+  name = "${local.resource_prefix}-dlm-policy-${substr(local.resource_suffix, 0, 8)}"
   role = aws_iam_role.dlm_lifecycle_role.id
 
   policy = jsonencode({

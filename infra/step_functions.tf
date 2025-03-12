@@ -1,5 +1,5 @@
 resource "aws_iam_role" "step_functions" {
-  name = "${local.resource_prefix}-sfn-${local.resource_suffix}"
+  name = "${local.resource_prefix}-sfn-${substr(local.resource_suffix, 0, 8)}"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -15,7 +15,7 @@ resource "aws_iam_role" "step_functions" {
 }
 
 resource "aws_iam_role_policy" "step_functions" {
-  name = "${local.resource_prefix}-step-functions-policy-${local.resource_suffix}"
+  name = "${local.resource_prefix}-sfn-policy-${substr(local.resource_suffix, 0, 8)}"
   role = aws_iam_role.step_functions.id
   policy = jsonencode({
     Version = "2012-10-17"
