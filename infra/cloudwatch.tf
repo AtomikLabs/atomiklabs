@@ -122,13 +122,13 @@ resource "aws_dlm_lifecycle_policy" "neo4j_ebs_snapshot" {
       name = "Weekly Snapshots"
       
       create_rule {
-        interval      = 7
-        interval_unit = "DAYS"
+        interval      = 24
+        interval_unit = "HOURS"
         times         = ["23:45"]
       }
       
       retain_rule {
-        count = 1
+        count = 7
       }
       
       tags_to_add = {
