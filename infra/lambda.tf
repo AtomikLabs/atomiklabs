@@ -19,7 +19,7 @@ resource "aws_lambda_function" "mailer" {
 }
 
 resource "aws_iam_role" "lambda_mailer" {
-  name = "${local.resource_prefix}-mail-${local.resource_suffix}"
+  name = "${local.resource_prefix}-mail-${substr(local.resource_suffix, 0, 8)}"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -35,7 +35,7 @@ resource "aws_iam_role" "lambda_mailer" {
 }
 
 resource "aws_iam_role_policy" "lambda_mailer" {
-  name = "${local.resource_prefix}-lambda-mailer-policy-${local.resource_suffix}"
+  name = "${local.resource_prefix}-mail-policy-${substr(local.resource_suffix, 0, 8)}"
   role = aws_iam_role.lambda_mailer.id
   policy = jsonencode({
     Version = "2012-10-17"

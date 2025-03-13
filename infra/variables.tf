@@ -53,3 +53,16 @@ variable "monitored_systems" {
     products = list(string)
   }))
 }
+
+variable "laptop_pub_key" {
+  description = "Public SSH key for accessing the Neo4j EC2 instance"
+  type        = string
+  sensitive   = true
+}
+
+variable "neo4j_password" {
+  description = "Initial password for Neo4j database"
+  type        = string
+  sensitive   = true
+  default     = "neo4j"  # This will be stored in SSM and can be changed later
+}

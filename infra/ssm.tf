@@ -59,4 +59,11 @@ resource "aws_ssm_parameter" "nvd_s3_bucket" {
   type  = "String"
   value = aws_s3_bucket.storage.id
   tags  = local.common_tags
-} 
+}
+
+resource "aws_ssm_parameter" "neo4j_password" {
+  name  = "/${var.project}/${var.environment}/neo4j/password"
+  type  = "SecureString"
+  value = var.neo4j_password
+  tags  = local.common_tags
+}
