@@ -189,7 +189,7 @@ docker run -d \
   -v $MOUNT_POINT/logs:/logs \
   -v $MOUNT_POINT/import:/import \
   -v $MOUNT_POINT/plugins:/plugins \
-  -e NEO4J_AUTH=neo4j/$NEO4J_PASSWORD \
+  -e 'NEO4J_AUTH=neo4j/'"$NEO4J_PASSWORD"'' \
   neo4j:latest
 EOF
 

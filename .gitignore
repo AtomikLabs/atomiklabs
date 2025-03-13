@@ -196,3 +196,4 @@ cline_docs/
 
 summaries/
 scripts/custom/summaries/
+scripts/neo4j_connect.sh
