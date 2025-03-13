@@ -49,10 +49,12 @@ resource "aws_iam_role_policy" "step_functions" {
         Action = [
           "events:PutTargets",
           "events:PutRule",
-          "events:DescribeRule"
+          "events:DescribeRule",
+          "events:CreateManagedRule"
         ]
         Resource = [
-          "arn:aws:events:${var.region}:${data.aws_caller_identity.current.account_id}:rule/StepFunctionsGetEventsForECSTaskRule"
+          "arn:aws:events:${var.region}:${data.aws_caller_identity.current.account_id}:rule/StepFunctionsGetEventsForECSTaskRule",
+          "arn:aws:events:${var.region}:${data.aws_caller_identity.current.account_id}:rule/*"
         ]
       },
       {

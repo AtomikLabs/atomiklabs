@@ -9,6 +9,12 @@ data "aws_subnets" "default" {
   }
 }
 
+# Get subnet details for availability zone filtering
+data "aws_subnet" "selected" {
+  for_each = toset(data.aws_subnets.default.ids)
+  id       = each.value
+}
+
 data "aws_ami" "amazon_linux_2" {
   most_recent = true
   owners      = ["amazon"]
@@ -110,7 +116,8 @@ resource "aws_ebs_volume" "neo4j_data" {
 resource "aws_instance" "neo4j" {
   ami                    = data.aws_ami.amazon_linux_2.id
   instance_type          = "t3.medium"
-  subnet_id              = tolist(data.aws_subnets.default.ids)[0]
+  availability_zone      = "${var.region}a"
+  subnet_id              = [for s in tolist(data.aws_subnets.default.ids) : s if data.aws_subnet.selected[s].availability_zone == "${var.region}a"][0]
   vpc_security_group_ids = [aws_security_group.neo4j.id]
   key_name               = aws_key_pair.neo4j_ssh.key_name
   
