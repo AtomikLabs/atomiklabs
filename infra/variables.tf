@@ -27,7 +27,7 @@ variable "arxiv_config" {
     arxiv_set  = string
   })
   default = {
-    categories = ["CL", "CV", "RO", "CR", "AI", "MA", "NE", "IR"]
+    categories = ["CL", "CV", "RO", "CR"]
     back_date  = 1
     arxiv_set  = "cs"
   }
