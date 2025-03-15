@@ -15,11 +15,11 @@ from dotenv import load_dotenv
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
 
-CATEGORIES = ["CL", "CV", "RO", "CR", "AI"]  # Categories to process
-BACK_DATE = 3  # Number of days to look back
+CATEGORIES = ["CL", "CV", "RO", "CR", "AI", "LG", "CY"]  # Categories to process
+BACK_DATE = 1  # Number of days to look back
 
 cs_categories_inverted = {
-    "Computer Science - Artifical Intelligence": "AI",
+    "Computer Science - Artifiical Intelligence": "AI",
     "Computer Science - Hardware Architecture": "AR",
     "Computer Science - Computational Complexity": "CC",
     "Computer Science - Computational Engineering, Finance, and Science": "CE",
