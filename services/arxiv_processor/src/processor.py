@@ -130,14 +130,19 @@ def upload_to_s3(file_data: BytesIO, key: str):
         raise
 
 def fetch_data(base_url: str, from_date: str) -> list:
-    """Fetches data from arXiv API with proper 503 handling"""
+    """Fetches data from arXiv API with proper retry handling"""
     full_xml_responses = []
     params = {"verb": "ListRecords", "set": "cs", "metadataPrefix": "oai_dc", "from": from_date}
     
+    # Retry configuration
+    max_retries = 5
+    base_wait_time = 5  # seconds
+    
+    retry_count = 0
     while True:
         try:
             logging.info(f"Fetching data with parameters: {params}")
-            response = requests.get(base_url, params=params)
+            response = requests.get(base_url, params=params, timeout=30)
             
             if response.status_code == 503:
                 retry_after = int(response.headers.get('Retry-After', 30))
@@ -155,18 +160,51 @@ def fetch_data(base_url: str, from_date: str) -> list:
                 logging.info(f"Found resumption token: {resumption_token.text}")
                 time.sleep(5)  # Be nice to the server
                 params = {"verb": "ListRecords", "resumptionToken": resumption_token.text}
+                # Reset retry count for new request
+                retry_count = 0
             else:
                 break
 
         except requests.exceptions.HTTPError as e:
             logging.error(f"HTTP error occurred: {e}")
-            break
+            if retry_count < max_retries:
+                wait_time = base_wait_time * (2 ** retry_count)
+                logging.info(f"Retrying in {wait_time} seconds (attempt {retry_count+1}/{max_retries})...")
+                time.sleep(wait_time)
+                retry_count += 1
+            else:
+                logging.error(f"Maximum retry attempts reached ({max_retries}). Giving up.")
+                break
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            logging.error(f"Connection error occurred: {e}")
+            if retry_count < max_retries:
+                wait_time = base_wait_time * (2 ** retry_count)
+                logging.info(f"Retrying in {wait_time} seconds (attempt {retry_count+1}/{max_retries})...")
+                time.sleep(wait_time)
+                retry_count += 1
+            else:
+                logging.error(f"Maximum retry attempts reached ({max_retries}). Giving up.")
+                break
         except ET.ParseError as e:
             logging.error(f"Parse error occurred: {e}")
-            break
+            if retry_count < max_retries:
+                wait_time = base_wait_time * (2 ** retry_count)
+                logging.info(f"Retrying in {wait_time} seconds (attempt {retry_count+1}/{max_retries})...")
+                time.sleep(wait_time)
+                retry_count += 1
+            else:
+                logging.error(f"Maximum retry attempts reached ({max_retries}). Giving up.")
+                break
         except Exception as e:
             logging.error(f"Unexpected error occurred: {e}")
-            break
+            if retry_count < max_retries:
+                wait_time = base_wait_time * (2 ** retry_count)
+                logging.info(f"Retrying in {wait_time} seconds (attempt {retry_count+1}/{max_retries})...")
+                time.sleep(wait_time)
+                retry_count += 1
+            else:
+                logging.error(f"Maximum retry attempts reached ({max_retries}). Giving up.")
+                break
 
     return full_xml_responses
 
