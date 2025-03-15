@@ -301,7 +301,11 @@ def create_research_summary(records: list, date: str) -> dict:
         
         category_papers = []
         for record in records:
-            if record["primary_category"] == category and record["date"] == date:
+            start_date = datetime.strptime(date, "%Y-%m-%d")
+            end_date = start_date + timedelta(days=1)
+            record_date = datetime.strptime(record["date"], "%Y-%m-%d")
+
+            if record["primary_category"] == category and start_date <= record_date < end_date:
                 # Store paper info for metadata
                 category_papers.append(record)
                 
