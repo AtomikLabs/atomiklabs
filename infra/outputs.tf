@@ -32,3 +32,8 @@ output "neo4j_ssh_command" {
   description = "SSH command to connect to the Neo4j instance"
   value       = "ssh ec2-user@${aws_instance.neo4j[0].public_dns}"
 }
+
+output "neo4j_elastic_ip" {
+  description = "Elastic IP address assigned to the Neo4j instance"
+  value       = aws_elastic_ip.neo4j.public_ip
+}

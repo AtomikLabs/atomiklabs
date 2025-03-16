@@ -191,3 +191,8 @@ resource "aws_security_group" "neo4j" {
     }
   )
 }
+
+resource "aws_elastic_ip" "neo4j" {
+  instance = aws_instance.neo4j[0].id
+  vpc      = true
+}
