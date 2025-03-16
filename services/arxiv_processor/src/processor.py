@@ -14,6 +14,8 @@ import requests
 from docx import Document
 from botocore.exceptions import ClientError
 
+from constants import *
+
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
 
@@ -84,49 +86,6 @@ DYNAMODB_TABLE = config['dynamodb_table']
 
 s3 = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb').Table(DYNAMODB_TABLE)
-
-cs_categories_inverted = {
-    "Computer Science - Artificial Intelligence": "AI",
-    "Computer Science - Hardware Architecture": "AR",
-    "Computer Science - Computational Complexity": "CC",
-    "Computer Science - Computational Engineering, Finance, and Science": "CE",
-    "Computer Science - Computational Geometry": "CG",
-    "Computer Science - Computation and Language": "CL",
-    "Computer Science - Cryptography and Security": "CR",
-    "Computer Science - Computer Vision and Pattern Recognition": "CV",
-    "Computer Science - Computers and Society": "CY",
-    "Computer Science - Databases": "DB",
-    "Computer Science - Distributed, Parallel, and Cluster Computing": "DC",
-    "Computer Science - Digital Libraries": "DL",
-    "Computer Science - Discrete Mathematics": "DM",
-    "Computer Science - Data Structures and Algorithms": "DS",
-    "Computer Science - Emerging Technologies": "ET",
-    "Computer Science - Formal Languages and Automata Theory": "FL",
-    "Computer Science - General Literature": "GL",
-    "Computer Science - Graphics": "GR",
-    "Computer Science - Computer Science and Game Theory": "GT",
-    "Computer Science - Human-Computer Interaction": "HC",
-    "Computer Science - Information Retrieval": "IR",
-    "Computer Science - Information Theory": "IT",
-    "Computer Science - Machine Learning": "LG",
-    "Computer Science - Logic in Computer Science": "LO",
-    "Computer Science - Multiagent Systems": "MA",
-    "Computer Science - Multimedia": "MM",
-    "Computer Science - Mathematical Software": "MS",
-    "Computer Science - Numerical Analysis": "NA",
-    "Computer Science - Neural and Evolutionary Computing": "NE",
-    "Computer Science - Networking and Internet Architecture": "NI",
-    "Computer Science - Other Computer Science": "OH",
-    "Computer Science - Operating Systems": "OS",
-    "Computer Science - Performance": "PF",
-    "Computer Science - Programming Languages": "PL",
-    "Computer Science - Robotics": "RO",
-    "Computer Science - Symbolic Computation": "SC",
-    "Computer Science - Sound": "SD",
-    "Computer Science - Software Engineering": "SE",
-    "Computer Science - Social and Information Networks": "SI",
-    "Computer Science - Systems and Control": "SY",
-}
 
 def store_paper_metadata(record: dict, dynamodb_table, set_name: str = None):
     """Store paper metadata in DynamoDB"""
@@ -244,6 +203,18 @@ def parse_xml_data(xml_data: str, set_name: str) -> dict:
     """Parses XML data from arXiv"""
     extracted_data = {"records": []}
 
+    # Select the appropriate category dictionary based on set name
+    category_dict = {
+        "cs": cs_categories_inverted,
+        "math": math_categories_inverted,
+        "econ": econ_categories_inverted,
+        "physics": physics_categories_inverted,
+        "q-bio": qbio_categories_inverted,
+        "q-fin": qfin_categories_inverted,
+        "stat": stat_categories_inverted,
+        "eess": eess_categories_inverted
+    }.get(set_name, cs_categories_inverted)  # Default to CS if set not recognized
+
     try:
         root = ET.fromstring(xml_data)
         ns = {
@@ -267,7 +238,7 @@ def parse_xml_data(xml_data: str, set_name: str) -> dict:
                 })
 
             subjects = record.findall(".//dc:subject", ns)
-            categories = [cs_categories_inverted.get(subject.text, "") for subject in subjects]
+            categories = [category_dict.get(subject.text, "") for subject in subjects]
             categories = list(filter(None, categories))
             primary_category = categories[0] if categories else ""
 

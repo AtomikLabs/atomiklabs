@@ -36,7 +36,7 @@ variable "arxiv_config" {
         back_date = 3
       },
       math = {
-        categories = ["DS", "GR", "PR"]
+        categories = ["AC", "AG", "DS", "GR", "LO", "PR"]
         back_date = 3
       }
     }
