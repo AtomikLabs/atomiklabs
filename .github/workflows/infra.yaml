@@ -135,6 +135,15 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Build and push Newsletter processor
+        working-directory: ./services/newsletter_processor
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "Building Newsletter processor image for repository: ${{ env.ECR_REPO }}"
+          docker build -t ${{ env.ECR_REPO }}:newsletter .
+          docker push ${{ env.ECR_REPO }}:newsletter
+
       - name: Build and push ArXiv processor
         working-directory: ./services/arxiv_processor
         env:
