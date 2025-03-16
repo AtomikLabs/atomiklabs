@@ -329,6 +329,52 @@ def add_hyperlink(paragraph, text, url):
     
     return hyperlink
 
+def store_paper_json(record: dict):
+    """Store individual paper abstract as JSON in S3"""
+    try:
+        # Extract arxiv ID from the identifier (which might have a prefix)
+        arxiv_id = record["identifier"].split('/')[-1] if '/' in record["identifier"] else record["identifier"]
+        
+        # Set is hardcoded as "cs" for now
+        set_name = "cs"
+        
+        # Use primary category for folder structure
+        category = record["primary_category"]
+        
+        if not category:
+            logging.warning(f"Paper {arxiv_id} has no primary category, skipping S3 storage")
+            return None
+            
+        # Create JSON-serializable paper abstract data
+        paper_data = {
+            "id": record["identifier"],
+            "title": record["title"],
+            "abstract": record["abstract"],
+            "date": record["date"],
+            "authors": record["authors"],
+            "categories": record["categories"],
+            "primary_category": record["primary_category"],
+            "abstract_url": record["abstract_url"],
+            "pdf_url": record["abstract_url"].replace("abs", "pdf"),
+            "processed_date": datetime.utcnow().isoformat()
+        }
+        
+        # Convert to JSON
+        json_data = json.dumps(paper_data, indent=2)
+        
+        # Create S3 key using new structure
+        s3_key = f"papers/{set_name}/{category}/{arxiv_id}.json"
+        
+        # Upload to S3
+        json_buffer = BytesIO(json_data.encode('utf-8'))
+        upload_to_s3(json_buffer, s3_key)
+        
+        return s3_key
+        
+    except Exception as e:
+        logging.error(f"Error storing paper JSON: {e}")
+        return None
+
 def create_research_summary(records: list, date: str) -> dict:
     """Creates research summary documents and returns file info"""
     summary_files = {}
@@ -367,6 +413,9 @@ def create_research_summary(records: list, date: str) -> dict:
                 
                 # Add spacing
                 doc.add_paragraph()
+                
+                # Also store individual paper as JSON
+                store_paper_json(record)
 
         if category_papers:
             # Save to memory
@@ -407,11 +456,11 @@ def main():
             all_records.extend(data["records"])
             
         if all_records:
-            # Store metadata for each paper
+            # Store metadata for each paper in DynamoDB
             for record in all_records:
                 store_paper_metadata(record)
             
-            # Create and upload summary documents - use today's date for storage
+            # Create research summaries and store individual JSON files
             summary_files = create_research_summary(all_records, date)
             
             if summary_files:
