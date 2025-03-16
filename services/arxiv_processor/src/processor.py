@@ -93,6 +93,11 @@ def store_paper_metadata(record: dict, dynamodb_table, set_name: str = None):
         # Use set from record if provided, otherwise use passed set_name
         set_value = record.get("set", set_name)
         
+        # Extract arxiv ID for S3 key construction
+        arxiv_id = record["identifier"].split('/')[-1] if '/' in record["identifier"] else record["identifier"]
+        category = record["primary_category"]
+        abstract_s3_key = f"papers/{set_value}/{category}/{arxiv_id}.json" if category else None
+        
         item = {
             "id": record["identifier"],
             "date": record["date"],
@@ -103,7 +108,7 @@ def store_paper_metadata(record: dict, dynamodb_table, set_name: str = None):
             "abstract_url": record["abstract_url"],
             "pdf_url": record["abstract_url"].replace("abs", "pdf"),
             "set": set_value,
-            "abstract": record["abstract"],
+            "abstract_s3_key": abstract_s3_key,
             "processed_date": datetime.utcnow().isoformat()
         }
         dynamodb_table.put_item(Item=item)
@@ -407,9 +412,6 @@ def create_research_summary(records: list, date: str, categories: list, s3_bucke
                 
                 # Add spacing
                 doc.add_paragraph()
-                
-                # Store individual paper
-                store_paper_json(record, s3_bucket, s3_client, set_name)
 
         if category_papers:
             # Save to memory
@@ -468,7 +470,11 @@ def main():
                 all_records.extend(data["records"])
                 
             if all_records:
-                # Store metadata for each paper
+                # First store individual paper abstracts in S3
+                for record in all_records:
+                    store_paper_json(record, config["s3_bucket"], s3_client, set_name)
+                
+                # Then store metadata for each paper (which now includes S3 key)
                 for record in all_records:
                     store_paper_metadata(record, dynamodb_client, set_name)
                 
