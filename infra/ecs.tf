@@ -28,6 +28,18 @@ resource "aws_iam_role" "ecs_task_role" {
   })
 }
 
+resource "aws_security_group" "ecs_tasks" {
+  name        = "${local.resource_prefix}-ecs-tasks-${local.resource_suffix}"
+  description = "Allow outbound traffic for ECS tasks"
+  vpc_id      = data.aws_vpc.default.id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
 resource "aws_iam_role_policy" "ecs_task_policy" {
   name = "${local.resource_prefix}-task-policy-${substr(local.resource_suffix, 0, 8)}"
   role = aws_iam_role.ecs_task_role.id
