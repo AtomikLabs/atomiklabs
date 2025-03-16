@@ -33,7 +33,7 @@ output "neo4j_ssh_command" {
   value       = "ssh ec2-user@${aws_instance.neo4j[0].public_dns}"
 }
 
-output "neo4j_elastic_ip" {
-  description = "Elastic IP address assigned to the Neo4j instance"
-  value       = aws_elastic_ip.neo4j.public_ip
+output "neo4j_eip" {
+  description = "Elastic IP of the Neo4j instance"
+  value       = aws_eip.neo4j.public_ip
 }
