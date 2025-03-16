@@ -315,29 +315,6 @@ def latex_to_human_readable(latex_str: str) -> str:
     
     return unescape(latex_str)
 
-def add_hyperlink(paragraph, text, url):
-    """Add a hyperlink to a paragraph"""
-    part = paragraph.part
-    r_id = part.relate_to(url, docx.opc.constants.RELATIONSHIP_TYPE.HYPERLINK, is_external=True)
-    
-    hyperlink = docx.oxml.shared.OxmlElement('w:hyperlink')
-    hyperlink.set(docx.oxml.shared.qn('r:id'), r_id)
-    
-    new_run = docx.oxml.shared.OxmlElement('w:r')
-    rPr = docx.oxml.shared.OxmlElement('w:rPr')
-    
-    rStyle = docx.oxml.shared.OxmlElement('w:rStyle')
-    rStyle.set(docx.oxml.shared.qn('w:val'), 'Hyperlink')
-    rPr.append(rStyle)
-    
-    new_run.append(rPr)
-    new_run.text = text
-    hyperlink.append(new_run)
-    
-    paragraph._p.append(hyperlink)
-    
-    return hyperlink
-
 def store_paper_json(record: dict, s3_bucket: str, s3_client, set_name: str):
     """Store individual paper abstract as JSON in S3"""
     try:
@@ -371,66 +348,6 @@ def store_paper_json(record: dict, s3_bucket: str, s3_client, set_name: str):
     except Exception as e:
         logging.error(f"Error storing paper JSON: {e}")
         return None
-
-def create_research_summary(records: list, date: str, categories: list, s3_bucket: str, s3_client, set_name: str) -> dict:
-    """Creates research summary documents and returns file info"""
-    summary_files = {}
-    
-    for category in categories:
-        doc = Document()
-        doc.add_heading(f"arXiv {set_name}/{category} Research Summaries - {date}", 0)
-        
-        # Filter for records with this category
-        category_papers = []
-        for record in records:
-            # Date comparison logic
-            start_date = datetime.strptime(date, "%Y-%m-%d")
-            end_date = start_date + timedelta(days=1)
-            record_date = datetime.strptime(record["date"], "%Y-%m-%d")
-
-            if record["primary_category"] == category and start_date <= record_date < end_date:
-                # Store paper info for metadata
-                category_papers.append(record)
-                
-                # Add title with link
-                title_para = doc.add_paragraph()
-                add_hyperlink(title_para, record["title"], record["abstract_url"])
-                
-                # Add PDF link
-                pdf_link = record["abstract_url"].replace("abs", "pdf")
-                title_para.add_run(" [")
-                add_hyperlink(title_para, "PDF", pdf_link)
-                title_para.add_run("]")
-                
-                # Add authors
-                authors = [f"{author['first_name']} {author['last_name']}" for author in record["authors"]]
-                doc.add_paragraph(f"Authors: {', '.join(authors)}")
-                
-                # Add abstract
-                abstract = latex_to_human_readable(record["abstract"])
-                doc.add_paragraph(abstract)
-                
-                # Add spacing
-                doc.add_paragraph()
-
-        if category_papers:
-            # Save to memory
-            docx_buffer = BytesIO()
-            doc.save(docx_buffer)
-            docx_buffer.seek(0)
-            
-            # Updated S3 path to include set
-            s3_key = f"newsletters/{date}/{set_name}/{category}_research_summary.docx"
-            upload_to_s3(docx_buffer, s3_key, s3_bucket, s3_client)
-            
-            summary_files[category] = {
-                "s3_key": s3_key,
-                "papers": category_papers
-            }
-            
-            logging.info(f"Created and uploaded summary for {category}")
-
-    return summary_files
 
 def main():
     # Get config once and use it throughout
@@ -477,21 +394,7 @@ def main():
                 # Then store metadata for each paper (which now includes S3 key)
                 for record in all_records:
                     store_paper_metadata(record, dynamodb_client, set_name)
-                
-                # Create and upload summary documents
-                summary_files = create_research_summary(
-                    all_records, 
-                    date, 
-                    categories, 
-                    config["s3_bucket"], 
-                    s3_client,
-                    set_name
-                )
-                
-                if summary_files:
-                    logging.info(f"Successfully processed {len(all_records)} papers for {set_name}/{date}")
-                else:
-                    logging.warning(f"No papers in selected categories for {set_name}/{date}")
+
             else:
                 logging.warning(f"No records found for {set_name}/{date}")
     

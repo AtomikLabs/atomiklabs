@@ -105,10 +105,39 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-resource "aws_ecr_repository" "daily_processor" {
-  name = "${local.resource_prefix}-daily-processor-${local.resource_suffix}"
+resource "aws_ecr_repository" "atomiklabs_ecr" {
+  name = "${local.resource_prefix}-atomiklabs-ecr-${local.resource_suffix}"
   force_delete = true
 }
+
+resource "aws_ecs_task_definition" "newsletter_processor" {
+  family                   = "${local.resource_prefix}-newsletter-processor-${local.resource_suffix}"
+  requires_compatibilities = ["FARGATE"]
+  network_mode            = "awsvpc"
+  cpu                     = 1024
+  memory                  = 2048
+  task_role_arn           = aws_iam_role.ecs_task_role.arn
+  execution_role_arn      = aws_iam_role.ecs_execution_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name  = "newsletter-processor"
+      image = "${aws_ecr_repository.atomiklabs_ecr.repository_url}:newsletter"
+      environment = [
+        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = "/ecs/${local.resource_prefix}-newsletter-processor-${local.resource_suffix}"
+          awslogs-region        = var.region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
+    }
+  ])
+}
+
 
 resource "aws_ecs_task_definition" "arxiv_processor" {
   family                   = "${local.resource_prefix}-arxiv-processor-${local.resource_suffix}"
@@ -122,7 +151,7 @@ resource "aws_ecs_task_definition" "arxiv_processor" {
   container_definitions = jsonencode([
     {
       name  = "arxiv-processor"
-      image = "${aws_ecr_repository.daily_processor.repository_url}:arxiv"
+      image = "${aws_ecr_repository.atomiklabs_ecr.repository_url}:arxiv"
       environment = [
         { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
       ]
@@ -150,7 +179,7 @@ resource "aws_ecs_task_definition" "nvd_checker" {
   container_definitions = jsonencode([
     {
       name  = "nvd-checker"
-      image = "${aws_ecr_repository.daily_processor.repository_url}:nvd"
+      image = "${aws_ecr_repository.atomiklabs_ecr.repository_url}:nvd"
       environment = [
         { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
       ]
