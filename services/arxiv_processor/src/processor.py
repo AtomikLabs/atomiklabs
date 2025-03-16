@@ -14,6 +14,8 @@ import requests
 from docx import Document
 from botocore.exceptions import ClientError
 
+from constants import *
+
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
 
@@ -23,24 +25,53 @@ def get_config():
     """Get configuration from SSM Parameter Store"""
     config_path = os.getenv("CONFIG_PATH")
     try:
-        params = ssm.get_parameters(
+        # First get list of sets
+        sets_param = ssm.get_parameter(Name=f"{config_path}/arxiv/sets")
+        set_names = json.loads(sets_param['Parameter']['Value'])
+        
+        # Get global params first
+        global_params = ssm.get_parameters(
             Names=[
-                f"{config_path}/arxiv/categories",
-                f"{config_path}/arxiv/back_date",
-                f"{config_path}/arxiv/set",
                 f"{config_path}/arxiv/s3_bucket",
                 f"{config_path}/arxiv/dynamodb_table"
             ]
         )
+        
+        # Initialize config structure
         config = {}
-        for param in params['Parameters']:
+        for param in global_params['Parameters']:
             name = param['Name'].split('/')[-1]
-            if name == 'categories':
-                config[name] = param['Value'].split(',')
-            elif name == 'back_date':
-                config[name] = int(param['Value'])
-            else:
-                config[name] = param['Value']
+            config[name] = param['Value']
+        
+        # Initialize sets config
+        config["sets"] = {}
+        
+        # Get params for each set
+        for set_name in set_names:
+            set_params = ssm.get_parameters(
+                Names=[
+                    f"{config_path}/arxiv/{set_name}/categories",
+                    f"{config_path}/arxiv/{set_name}/back_date"
+                ]
+            )
+            
+            set_config = {}
+            for param in set_params['Parameters']:
+                name = param['Name'].split('/')[-1]
+                if name == 'categories':
+                    set_config[name] = param['Value'].split(',')
+                elif name == 'back_date':
+                    set_config[name] = int(param['Value'])
+            
+            config["sets"][set_name] = set_config
+            
+        # For backward compatibility, default to the first set if available
+        if set_names and set_names[0] in config["sets"]:
+            default_set = set_names[0]
+            config["categories"] = config["sets"][default_set]["categories"]
+            config["back_date"] = config["sets"][default_set]["back_date"]
+            config["set"] = default_set
+            
         return config
     except ClientError as e:
         logger.error(f"Error fetching config: {e}")
@@ -56,52 +87,12 @@ DYNAMODB_TABLE = config['dynamodb_table']
 s3 = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb').Table(DYNAMODB_TABLE)
 
-cs_categories_inverted = {
-    "Computer Science - Artificial Intelligence": "AI",
-    "Computer Science - Hardware Architecture": "AR",
-    "Computer Science - Computational Complexity": "CC",
-    "Computer Science - Computational Engineering, Finance, and Science": "CE",
-    "Computer Science - Computational Geometry": "CG",
-    "Computer Science - Computation and Language": "CL",
-    "Computer Science - Cryptography and Security": "CR",
-    "Computer Science - Computer Vision and Pattern Recognition": "CV",
-    "Computer Science - Computers and Society": "CY",
-    "Computer Science - Databases": "DB",
-    "Computer Science - Distributed, Parallel, and Cluster Computing": "DC",
-    "Computer Science - Digital Libraries": "DL",
-    "Computer Science - Discrete Mathematics": "DM",
-    "Computer Science - Data Structures and Algorithms": "DS",
-    "Computer Science - Emerging Technologies": "ET",
-    "Computer Science - Formal Languages and Automata Theory": "FL",
-    "Computer Science - General Literature": "GL",
-    "Computer Science - Graphics": "GR",
-    "Computer Science - Computer Science and Game Theory": "GT",
-    "Computer Science - Human-Computer Interaction": "HC",
-    "Computer Science - Information Retrieval": "IR",
-    "Computer Science - Information Theory": "IT",
-    "Computer Science - Machine Learning": "LG",
-    "Computer Science - Logic in Computer Science": "LO",
-    "Computer Science - Multiagent Systems": "MA",
-    "Computer Science - Multimedia": "MM",
-    "Computer Science - Mathematical Software": "MS",
-    "Computer Science - Numerical Analysis": "NA",
-    "Computer Science - Neural and Evolutionary Computing": "NE",
-    "Computer Science - Networking and Internet Architecture": "NI",
-    "Computer Science - Other Computer Science": "OH",
-    "Computer Science - Operating Systems": "OS",
-    "Computer Science - Performance": "PF",
-    "Computer Science - Programming Languages": "PL",
-    "Computer Science - Robotics": "RO",
-    "Computer Science - Symbolic Computation": "SC",
-    "Computer Science - Sound": "SD",
-    "Computer Science - Software Engineering": "SE",
-    "Computer Science - Social and Information Networks": "SI",
-    "Computer Science - Systems and Control": "SY",
-}
-
-def store_paper_metadata(record: dict):
+def store_paper_metadata(record: dict, dynamodb_table, set_name: str = None):
     """Store paper metadata in DynamoDB"""
     try:
+        # Use set from record if provided, otherwise use passed set_name
+        set_value = record.get("set", set_name)
+        
         item = {
             "id": record["identifier"],
             "date": record["date"],
@@ -111,28 +102,28 @@ def store_paper_metadata(record: dict):
             "primary_category": record["primary_category"],
             "abstract_url": record["abstract_url"],
             "pdf_url": record["abstract_url"].replace("abs", "pdf"),
-            "set": "cs",
+            "set": set_value,
             "abstract": record["abstract"],
             "processed_date": datetime.utcnow().isoformat()
         }
-        dynamodb.put_item(Item=item)
+        dynamodb_table.put_item(Item=item)
     except ClientError as e:
         logger.error(f"Error storing metadata: {e}")
         raise
 
-def upload_to_s3(file_data: BytesIO, key: str):
+def upload_to_s3(file_data: BytesIO, key: str, s3_bucket: str, s3_client):
     """Upload file to S3"""
     try:
-        s3.upload_fileobj(file_data, S3_BUCKET, key)
+        s3_client.upload_fileobj(file_data, s3_bucket, key)
         logger.info(f"Uploaded {key} to S3")
     except ClientError as e:
         logger.error(f"Error uploading to S3: {e}")
         raise
 
-def fetch_data(base_url: str, from_date: str) -> list:
+def fetch_data(base_url: str, from_date: str, set_name: str) -> list:
     """Fetches data from arXiv API with proper retry handling"""
     full_xml_responses = []
-    params = {"verb": "ListRecords", "set": "cs", "metadataPrefix": "oai_dc", "from": from_date}
+    params = {"verb": "ListRecords", "set": set_name, "metadataPrefix": "oai_dc", "from": from_date}
     
     # Retry configuration
     max_retries = 5
@@ -208,9 +199,21 @@ def fetch_data(base_url: str, from_date: str) -> list:
 
     return full_xml_responses
 
-def parse_xml_data(xml_data: str) -> dict:
+def parse_xml_data(xml_data: str, set_name: str) -> dict:
     """Parses XML data from arXiv"""
     extracted_data = {"records": []}
+
+    # Select the appropriate category dictionary based on set name
+    category_dict = {
+        "cs": cs_categories_inverted,
+        "math": math_categories_inverted,
+        "econ": econ_categories_inverted,
+        "physics": physics_categories_inverted,
+        "q-bio": qbio_categories_inverted,
+        "q-fin": qfin_categories_inverted,
+        "stat": stat_categories_inverted,
+        "eess": eess_categories_inverted
+    }.get(set_name, cs_categories_inverted)  # Default to CS if set not recognized
 
     try:
         root = ET.fromstring(xml_data)
@@ -235,7 +238,7 @@ def parse_xml_data(xml_data: str) -> dict:
                 })
 
             subjects = record.findall(".//dc:subject", ns)
-            categories = [cs_categories_inverted.get(subject.text, "") for subject in subjects]
+            categories = [category_dict.get(subject.text, "") for subject in subjects]
             categories = list(filter(None, categories))
             primary_category = categories[0] if categories else ""
 
@@ -247,7 +250,8 @@ def parse_xml_data(xml_data: str) -> dict:
                 "categories": categories,
                 "abstract": abstract,
                 "title": title,
-                "date": date
+                "date": date,
+                "set": set_name
             })
 
     except ET.ParseError as e:
@@ -329,14 +333,11 @@ def add_hyperlink(paragraph, text, url):
     
     return hyperlink
 
-def store_paper_json(record: dict):
+def store_paper_json(record: dict, s3_bucket: str, s3_client, set_name: str):
     """Store individual paper abstract as JSON in S3"""
     try:
         # Extract arxiv ID from the identifier (which might have a prefix)
         arxiv_id = record["identifier"].split('/')[-1] if '/' in record["identifier"] else record["identifier"]
-        
-        # Set is hardcoded as "cs" for now
-        set_name = "cs"
         
         # Use primary category for folder structure
         category = record["primary_category"]
@@ -358,7 +359,7 @@ def store_paper_json(record: dict):
         
         # Upload to S3
         json_buffer = BytesIO(json_data.encode('utf-8'))
-        upload_to_s3(json_buffer, s3_key)
+        upload_to_s3(json_buffer, s3_key, s3_bucket, s3_client)
         
         return s3_key
         
@@ -366,16 +367,18 @@ def store_paper_json(record: dict):
         logging.error(f"Error storing paper JSON: {e}")
         return None
 
-def create_research_summary(records: list, date: str) -> dict:
+def create_research_summary(records: list, date: str, categories: list, s3_bucket: str, s3_client, set_name: str) -> dict:
     """Creates research summary documents and returns file info"""
     summary_files = {}
     
-    for category in CATEGORIES:
+    for category in categories:
         doc = Document()
-        doc.add_heading(f"arXiv {category} Research Summaries - {date}", 0)
+        doc.add_heading(f"arXiv {set_name}/{category} Research Summaries - {date}", 0)
         
+        # Filter for records with this category
         category_papers = []
         for record in records:
+            # Date comparison logic
             start_date = datetime.strptime(date, "%Y-%m-%d")
             end_date = start_date + timedelta(days=1)
             record_date = datetime.strptime(record["date"], "%Y-%m-%d")
@@ -405,8 +408,8 @@ def create_research_summary(records: list, date: str) -> dict:
                 # Add spacing
                 doc.add_paragraph()
                 
-                # Also store individual paper as JSON
-                store_paper_json(record)
+                # Store individual paper
+                store_paper_json(record, s3_bucket, s3_client, set_name)
 
         if category_papers:
             # Save to memory
@@ -414,9 +417,9 @@ def create_research_summary(records: list, date: str) -> dict:
             doc.save(docx_buffer)
             docx_buffer.seek(0)
             
-            # Upload to S3
-            s3_key = f"newsletters/{date}/{category}_research_summary.docx"
-            upload_to_s3(docx_buffer, s3_key)
+            # Updated S3 path to include set
+            s3_key = f"newsletters/{date}/{set_name}/{category}_research_summary.docx"
+            upload_to_s3(docx_buffer, s3_key, s3_bucket, s3_client)
             
             summary_files[category] = {
                 "s3_key": s3_key,
@@ -428,42 +431,66 @@ def create_research_summary(records: list, date: str) -> dict:
     return summary_files
 
 def main():
+    # Get config once and use it throughout
+    config = get_config()
+    
     base_url = "http://export.arxiv.org/oai2"
     today = datetime.today()
     
-    for i in range(BACK_DATE):
-        date = (today - timedelta(days=i+1)).strftime("%Y-%m-%d")
-        logging.info(f"Processing papers for {date}")
-        
-        xml_responses = fetch_data(base_url, date)
-        
-        if not xml_responses:
-            logging.warning(f"No data retrieved for {date}. Skipping...")
-            continue
-            
-        all_records = []
-        for xml in xml_responses:
-            data = parse_xml_data(xml)
-            all_records.extend(data["records"])
-            
-        if all_records:
-            # Store metadata for each paper in DynamoDB
-            for record in all_records:
-                store_paper_metadata(record)
-            
-            # Create research summaries and store individual JSON files
-            summary_files = create_research_summary(all_records, date)
-            
-            if summary_files:
-                logging.info(f"Successfully processed {len(all_records)} papers for {date}")
-                return
-            else:
-                logging.warning(f"No papers in selected categories for {date}")
-        else:
-            logging.warning(f"No records found for {date}")
+    # Initialize shared clients
+    s3_client = boto3.client('s3')
+    dynamodb_client = boto3.resource('dynamodb').Table(config["dynamodb_table"])
     
-    # If we get here, no papers were processed
-    print(json.dumps({"error": "No papers were processed"}))
+    # Process each set
+    for set_name, set_config in config["sets"].items():
+        logging.info(f"Processing set: {set_name}")
+        
+        # Use set specific categories and back_date
+        categories = set_config["categories"]
+        back_date = set_config["back_date"]
+        
+        # Create set-specific category mapping if needed
+        # For simplicity, we'll still use cs_categories_inverted for all sets
+        
+        for i in range(back_date):
+            date = (today - timedelta(days=i+1)).strftime("%Y-%m-%d")
+            logging.info(f"Processing papers for {set_name}/{date}")
+            
+            xml_responses = fetch_data(base_url, date, set_name)
+            
+            if not xml_responses:
+                logging.warning(f"No data retrieved for {set_name}/{date}. Skipping...")
+                continue
+                
+            all_records = []
+            for xml in xml_responses:
+                data = parse_xml_data(xml, set_name)
+                all_records.extend(data["records"])
+                
+            if all_records:
+                # Store metadata for each paper
+                for record in all_records:
+                    store_paper_metadata(record, dynamodb_client, set_name)
+                
+                # Create and upload summary documents
+                summary_files = create_research_summary(
+                    all_records, 
+                    date, 
+                    categories, 
+                    config["s3_bucket"], 
+                    s3_client,
+                    set_name
+                )
+                
+                if summary_files:
+                    logging.info(f"Successfully processed {len(all_records)} papers for {set_name}/{date}")
+                else:
+                    logging.warning(f"No papers in selected categories for {set_name}/{date}")
+            else:
+                logging.warning(f"No records found for {set_name}/{date}")
+    
+    # If we get here, all sets are processed
+    print(json.dumps({"status": "Processing complete"}))
 
 if __name__ == "__main__":
     main()

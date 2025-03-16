@@ -20,16 +20,31 @@ variable "resource_uuid" {
 }
 
 variable "arxiv_config" {
-  description = "ArXiv processor configuration"
+  description = "ArXiv processor configuration for multiple sets"
   type = object({
-    categories = list(string)
-    back_date  = number
-    arxiv_set  = string
+    sets = map(object({
+      categories = list(string)
+      back_date = number
+    }))
+    default_back_date = number
   })
+  
   default = {
-    categories = ["AI", "CL", "CR", "CV", "DB", "DS", "IT", "RO", "SC"]
-    back_date  = 1
-    arxiv_set  = "cs"
+    sets = {
+      cs = {
+        categories = ["AI", "CL", "CR", "CV", "DB", "DS", "IT", "RO", "SC"]
+        back_date = 1
+      },
+      math = {
+        categories = ["AC", "AG", "DS", "GR", "LO", "PR"]
+        back_date = 1
+      },
+      stat = {
+        categories = ["CO", "ML"]
+        back_date = 1
+      }
+    }
+    default_back_date = 1
   }
 }
 
@@ -64,5 +79,5 @@ variable "neo4j_password" {
   description = "Initial password for Neo4j database"
   type        = string
   sensitive   = true
-  default     = "neo4j"  # This will be stored in SSM and can be changed later
+  default     = "neo4j"
 }
