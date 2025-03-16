@@ -13,7 +13,6 @@ data "aws_ami" "amazon_linux_2" {
   }
 }
 
-# EBS volume for Neo4j data
 resource "aws_ebs_volume" "neo4j_data" {
   availability_zone = "${var.region}a"
   size              = 64
@@ -27,13 +26,11 @@ resource "aws_ebs_volume" "neo4j_data" {
     }
   )
 
-  # Prevent destruction of the volume
   lifecycle {
     prevent_destroy = true
   }
 }
 
-# EC2 instance for Neo4j
 resource "aws_instance" "neo4j" {
   ami                    = data.aws_ami.amazon_linux_2.id
   instance_type          = "t3.medium"
@@ -42,7 +39,6 @@ resource "aws_instance" "neo4j" {
   vpc_security_group_ids = [aws_security_group.neo4j.id]
   key_name               = aws_key_pair.neo4j_ssh.key_name
   
-  # Only create 1 instance
   count = 1
 
   root_block_device {
@@ -121,21 +117,17 @@ EOF
     }
   )
 
-  # Ensure the instance is created before attaching the volume
   depends_on = [aws_ebs_volume.neo4j_data]
 }
 
-# Attach the EBS volume to the EC2 instance
 resource "aws_volume_attachment" "neo4j_data_attachment" {
   device_name = "/dev/sdf"
   volume_id   = aws_ebs_volume.neo4j_data.id
   instance_id = aws_instance.neo4j[0].id
 
-  # Skip destroying the attachment when the instance is destroyed
   skip_destroy = true
 }
 
-# SSH key pair for Neo4j instance
 resource "aws_key_pair" "neo4j_ssh" {
   key_name   = "${local.resource_prefix}-neo4j-key-${local.resource_suffix}"
   public_key = var.laptop_pub_key
@@ -148,7 +140,6 @@ resource "aws_security_group" "neo4j" {
   description = "Security group for Neo4j EC2 instance"
   vpc_id      = data.aws_vpc.default.id
 
-  # SSH access
   ingress {
     from_port   = 22
     to_port     = 22
@@ -157,7 +148,6 @@ resource "aws_security_group" "neo4j" {
     description = "SSH access"
   }
 
-  # Neo4j HTTP access (only accessible via SSH tunnel)
   ingress {
     from_port   = 7474
     to_port     = 7474
@@ -166,7 +156,6 @@ resource "aws_security_group" "neo4j" {
     description = "Neo4j HTTP access (via SSH tunnel)"
   }
 
-  # Neo4j Bolt access (only accessible via SSH tunnel)
   ingress {
     from_port   = 7687
     to_port     = 7687
@@ -175,7 +164,6 @@ resource "aws_security_group" "neo4j" {
     description = "Neo4j Bolt access (via SSH tunnel)"
   }
 
-  # Allow all outbound traffic
   egress {
     from_port   = 0
     to_port     = 0
