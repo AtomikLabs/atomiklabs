@@ -1,15 +1,23 @@
-resource "aws_ssm_parameter" "arxiv_categories" {
-  name  = "/${var.project}/${var.environment}/arxiv/categories"
+resource "aws_ssm_parameter" "arxiv_sets" {
+  name  = "${var.environment}/arxiv/sets"
   type  = "String"
-  value = join(",", var.arxiv_config.categories)
-  tags  = local.common_tags
+  value = jsonencode(keys(var.arxiv_config.sets))
+}
+
+resource "aws_ssm_parameter" "arxiv_categories" {
+  for_each = var.arxiv_config.sets
+  
+  name  = "${var.environment}/arxiv/${each.key}/categories"
+  type  = "String"
+  value = join(",", each.value.categories)
 }
 
 resource "aws_ssm_parameter" "arxiv_back_date" {
-  name  = "/${var.project}/${var.environment}/arxiv/back_date"
-  type  = "String"
-  value = tostring(var.arxiv_config.back_date)
-  tags  = local.common_tags
+  for_each = var.arxiv_config.sets
+  
+  name  = "${var.environment}/arxiv/${each.key}/back_date"
+  type  = "Number"
+  value = each.value.back_date
 }
 
 resource "aws_ssm_parameter" "arxiv_set" {
