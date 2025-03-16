@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ .
 
-CMD ["python", "processor.py"] 
+CMD ["python", "newsletter_processor.py"] 
