@@ -27,12 +27,7 @@ def get_config():
         sets_param = ssm.get_parameter(Name=f"{config_path}/arxiv/sets")
         set_names = json.loads(sets_param['Parameter']['Value'])
         
-        # Initialize config structure
-        config = {
-            "sets": {}
-        }
-        
-        # Get global params
+        # Get global params first
         global_params = ssm.get_parameters(
             Names=[
                 f"{config_path}/arxiv/s3_bucket",
@@ -40,9 +35,14 @@ def get_config():
             ]
         )
         
+        # Initialize config structure
+        config = {}
         for param in global_params['Parameters']:
             name = param['Name'].split('/')[-1]
             config[name] = param['Value']
+        
+        # Initialize sets config
+        config["sets"] = {}
         
         # Get params for each set
         for set_name in set_names:
@@ -62,6 +62,13 @@ def get_config():
                     set_config[name] = int(param['Value'])
             
             config["sets"][set_name] = set_config
+            
+        # For backward compatibility, default to the first set if available
+        if set_names and set_names[0] in config["sets"]:
+            default_set = set_names[0]
+            config["categories"] = config["sets"][default_set]["categories"]
+            config["back_date"] = config["sets"][default_set]["back_date"]
+            config["set"] = default_set
             
         return config
     except ClientError as e:
