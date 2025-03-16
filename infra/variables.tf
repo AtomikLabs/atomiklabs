@@ -33,11 +33,15 @@ variable "arxiv_config" {
     sets = {
       cs = {
         categories = ["AI", "CL", "CR", "CV", "DB", "DS", "IT", "RO", "SC"]
-        back_date = 3
+        back_date = 1
       },
       math = {
         categories = ["AC", "AG", "DS", "GR", "LO", "PR"]
-        back_date = 3
+        back_date = 1
+      },
+      stat = {
+        categories = ["CO", "ML"]
+        back_date = 1
       }
     }
     default_back_date = 1
