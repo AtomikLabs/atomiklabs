@@ -110,6 +110,35 @@ resource "aws_ecr_repository" "atomiklabs_ecr" {
   force_delete = true
 }
 
+resource "aws_ecs_task_definition" "newsletter_processor" {
+  family                   = "${local.resource_prefix}-newsletter-processor-${local.resource_suffix}"
+  requires_compatibilities = ["FARGATE"]
+  network_mode            = "awsvpc"
+  cpu                     = 1024
+  memory                  = 2048
+  task_role_arn           = aws_iam_role.ecs_task_role.arn
+  execution_role_arn      = aws_iam_role.ecs_execution_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name  = "newsletter-processor"
+      image = "${aws_ecr_repository.atomiklabs_ecr.repository_url}:newsletter"
+      environment = [
+        { name = "CONFIG_PATH", value = "/${var.project}/${var.environment}" }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = "/ecs/${local.resource_prefix}-newsletter-processor-${local.resource_suffix}"
+          awslogs-region        = var.region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
+    }
+  ])
+}
+
+
 resource "aws_ecs_task_definition" "arxiv_processor" {
   family                   = "${local.resource_prefix}-arxiv-processor-${local.resource_suffix}"
   requires_compatibilities = ["FARGATE"]
