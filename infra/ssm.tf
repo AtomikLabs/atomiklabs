@@ -16,15 +16,8 @@ resource "aws_ssm_parameter" "arxiv_back_date" {
   for_each = var.arxiv_config.sets
   
   name  = "${var.environment}/arxiv/${each.key}/back_date"
-  type  = "Number"
-  value = each.value.back_date
-}
-
-resource "aws_ssm_parameter" "arxiv_set" {
-  name  = "/${var.project}/${var.environment}/arxiv/set"
   type  = "String"
-  value = var.arxiv_config.arxiv_set
-  tags  = local.common_tags
+  value = tostring(each.value.back_date)
 }
 
 resource "aws_ssm_parameter" "s3_bucket" {
