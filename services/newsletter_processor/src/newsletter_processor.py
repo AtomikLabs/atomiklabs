@@ -9,8 +9,6 @@ import docx
 from docx import Document
 from botocore.exceptions import ClientError
 
-from constants import *
-
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
 
