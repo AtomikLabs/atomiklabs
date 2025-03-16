@@ -98,11 +98,9 @@ class NVDChecker:
         """Generate a DOCX report from the findings and store in S3"""
         doc = Document()
         
-        # Add title
         title = doc.add_heading("NVD Vulnerability Report", 0)
         title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
         
-        # Add date
         date_paragraph = doc.add_paragraph()
         current_time = datetime.now()
         date_run = date_paragraph.add_run(f"Report generated on {current_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
@@ -113,11 +111,9 @@ class NVDChecker:
             if not info["vulnerabilities"]:
                 continue
                 
-            # Add vendor section
             doc.add_heading(f"{vendor} ({info['criticality'].upper()})", level=1)
             
             for vuln in info["vulnerabilities"]:
-                # Add vulnerability details
                 h = doc.add_heading(level=2)
                 h.add_run(f"{vuln['id']} - {vuln['product']}")
                 
@@ -129,12 +125,10 @@ class NVDChecker:
                 
                 doc.add_paragraph(vuln["description"])
         
-        # Save to memory buffer
         docx_buffer = BytesIO()
         doc.save(docx_buffer)
         docx_buffer.seek(0)
         
-        # Upload to S3 in a consistent location
         date_str = current_time.strftime("%Y-%m-%d")
         s3_key = f"reports/daily/{date_str}/nvd_vulnerabilities.docx"
         

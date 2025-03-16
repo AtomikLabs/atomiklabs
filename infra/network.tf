@@ -9,7 +9,6 @@ data "aws_subnets" "default" {
   }
 }
 
-# Get subnet details for availability zone filtering
 data "aws_subnet" "selected" {
   for_each = toset(data.aws_subnets.default.ids)
   id       = each.value

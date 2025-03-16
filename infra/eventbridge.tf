@@ -46,7 +46,6 @@ resource "aws_cloudwatch_event_target" "daily_processor" {
   role_arn  = aws_iam_role.eventbridge.arn
 }
 
-# IAM role for EC2 instance scheduling
 resource "aws_iam_role" "ec2_scheduler" {
   name = "${local.resource_prefix}-ec2-sched-${substr(local.resource_suffix, 0, 8)}"
   assume_role_policy = jsonencode({
@@ -83,7 +82,6 @@ resource "aws_iam_role_policy" "ec2_scheduler" {
   })
 }
 
-# EventBridge rule to start Neo4j EC2 instance at 1 AM PST
 resource "aws_cloudwatch_event_rule" "neo4j_start" {
   name                = "${local.resource_prefix}-neo4j-start-${substr(local.resource_suffix, 0, 8)}"
   description         = "Start Neo4j EC2 instance at 1 AM PST"
@@ -101,7 +99,6 @@ resource "aws_cloudwatch_event_target" "neo4j_start" {
   })
 }
 
-# EventBridge rule to stop Neo4j EC2 instance at 9 AM PST
 resource "aws_cloudwatch_event_rule" "neo4j_stop" {
   name                = "${local.resource_prefix}-neo4j-stop-${substr(local.resource_suffix, 0, 8)}"
   description         = "Stop Neo4j EC2 instance at 9 AM PST"

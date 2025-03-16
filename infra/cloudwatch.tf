@@ -13,13 +13,11 @@ resource "aws_cloudwatch_log_group" "nvd_checker" {
   retention_in_days = 7
 }
 
-# CloudWatch log group for Neo4j EC2 instance
 resource "aws_cloudwatch_log_group" "neo4j" {
   name              = "/ec2/${local.resource_prefix}-neo4j-${local.resource_suffix}"
   retention_in_days = 7
 }
 
-# CloudWatch dashboard for Neo4j monitoring
 resource "aws_cloudwatch_dashboard" "neo4j" {
   dashboard_name = "${local.resource_prefix}-neo4j-dashboard-${local.resource_suffix}"
   
@@ -97,7 +95,6 @@ resource "aws_cloudwatch_dashboard" "neo4j" {
   })
 }
 
-# CloudWatch alarm for Neo4j high CPU
 resource "aws_cloudwatch_metric_alarm" "neo4j_cpu" {
   alarm_name          = "${local.resource_prefix}-neo4j-high-cpu-${local.resource_suffix}"
   comparison_operator = "GreaterThanThreshold"
@@ -114,7 +111,6 @@ resource "aws_cloudwatch_metric_alarm" "neo4j_cpu" {
   }
 }
 
-# DLM lifecycle policy for weekly EBS snapshots
 resource "aws_dlm_lifecycle_policy" "neo4j_ebs_snapshot" {
   description        = "Weekly EBS snapshot policy for Neo4j data volume"
   execution_role_arn = aws_iam_role.dlm_lifecycle_role.arn
@@ -151,7 +147,6 @@ resource "aws_dlm_lifecycle_policy" "neo4j_ebs_snapshot" {
   tags = local.common_tags
 }
 
-# IAM role for DLM lifecycle policy
 resource "aws_iam_role" "dlm_lifecycle_role" {
   name = "${local.resource_prefix}-dlm-role-${substr(local.resource_suffix, 0, 8)}"
 

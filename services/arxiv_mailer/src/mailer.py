@@ -13,14 +13,13 @@ from botocore.exceptions import ClientError
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
 
-# Initialize default clients
 ssm = boto3.client('ssm')
 s3 = boto3.client('s3')
 ses = boto3.client('ses')
 
 def get_config(ssm_client=None):
     """Get configuration from SSM Parameter Store"""
-    ssm_client = ssm_client or ssm  # Use provided client or default
+    ssm_client = ssm_client or ssm
     config_path = os.getenv("CONFIG_PATH")
     try:
         params = ssm_client.get_parameters(
@@ -46,24 +45,22 @@ def get_config(ssm_client=None):
 
 def send_email_with_attachments(recipients: list, subject: str, body: str, attachments: list, ses_client=None):
     """Send email with DOCX attachments using SES"""
-    ses_client = ses_client or ses  # Use provided client or default
+    ses_client = ses_client or ses
     try:
         msg = MIMEMultipart()
         msg['Subject'] = subject
-        msg['From'] = recipients[0]  # Use first recipient as sender
+        msg['From'] = recipients[0]
         msg['To'] = ', '.join(recipients)
         
-        # Add body
         msg.attach(MIMEText(body, 'plain'))
         
-        # Add attachments
         for attachment in attachments:
             part = MIMEApplication(attachment['data'])
             part.add_header('Content-Disposition', 'attachment', filename=attachment['filename'])
             msg.attach(part)
         
         response = ses_client.send_raw_email(
-            Source=recipients[0],  # Use first recipient as sender
+            Source=recipients[0],
             Destinations=recipients,
             RawMessage={'Data': msg.as_string()}
         )
@@ -74,7 +71,7 @@ def send_email_with_attachments(recipients: list, subject: str, body: str, attac
 
 def get_s3_files(bucket: str, prefix: str, s3_client=None) -> list:
     """Get files from S3 with given prefix"""
-    s3_client = s3_client or s3  # Use provided client or default
+    s3_client = s3_client or s3
     try:
         logger.info(f"Looking for files in s3://{bucket}/{prefix}")
         response = s3_client.list_objects_v2(
@@ -103,7 +100,6 @@ def get_s3_files(bucket: str, prefix: str, s3_client=None) -> list:
 
 def lambda_handler(event, context, *, ssm_client=None, s3_client=None, ses_client=None):
     """Lambda handler to email daily summaries"""
-    # Use provided clients or defaults
     ssm_client = ssm_client or ssm
     s3_client = s3_client or s3
     ses_client = ses_client or ses
@@ -112,22 +108,19 @@ def lambda_handler(event, context, *, ssm_client=None, s3_client=None, ses_clien
         config = get_config(ssm_client=ssm_client)
         logger.info(f"Using S3 bucket: {config['s3_bucket']}")
         
-        # Use PST timezone
         pst = ZoneInfo('America/Los_Angeles')
         today = datetime.now(pst)
         logger.info(f"Current time (PST): {today}")
         
-        today_str = today.strftime("%Y-%m-%d")  # Today's date for both ArXiv and NVD
+        today_str = today.strftime("%Y-%m-%d")
         logger.info(f"Looking for ArXiv summaries from: {today_str}")
         logger.info(f"Looking for NVD reports from: {today_str}")
         
-        # Get ArXiv summaries from today
         arxiv_path = f"newsletters/{today_str}/"
         logger.info(f"ArXiv path: {arxiv_path}")
         arxiv_files = get_s3_files(config['s3_bucket'], arxiv_path, s3_client=s3_client)
         logger.info(f"Found {len(arxiv_files)} arxiv files: {[f['filename'] for f in arxiv_files]}")
         
-        # Get NVD report (from today for immediate vulnerability reporting)
         nvd_path = f"reports/daily/{today_str}/"
         logger.info(f"NVD path: {nvd_path}")
         nvd_files = get_s3_files(config['s3_bucket'], nvd_path, s3_client=s3_client)

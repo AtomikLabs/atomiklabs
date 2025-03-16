@@ -3,7 +3,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from html import unescape
 from io import BytesIO
 
@@ -25,11 +25,9 @@ def get_config():
     """Get configuration from SSM Parameter Store"""
     config_path = os.getenv("CONFIG_PATH")
     try:
-        # First get list of sets
         sets_param = ssm.get_parameter(Name=f"{config_path}/arxiv/sets")
         set_names = json.loads(sets_param['Parameter']['Value'])
-        
-        # Get global params first
+
         global_params = ssm.get_parameters(
             Names=[
                 f"{config_path}/arxiv/s3_bucket",
@@ -37,16 +35,13 @@ def get_config():
             ]
         )
         
-        # Initialize config structure
         config = {}
         for param in global_params['Parameters']:
             name = param['Name'].split('/')[-1]
             config[name] = param['Value']
         
-        # Initialize sets config
         config["sets"] = {}
         
-        # Get params for each set
         for set_name in set_names:
             set_params = ssm.get_parameters(
                 Names=[
@@ -65,7 +60,6 @@ def get_config():
             
             config["sets"][set_name] = set_config
             
-        # For backward compatibility, default to the first set if available
         if set_names and set_names[0] in config["sets"]:
             default_set = set_names[0]
             config["categories"] = config["sets"][default_set]["categories"]
@@ -88,15 +82,17 @@ s3 = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb').Table(DYNAMODB_TABLE)
 
 def store_paper_metadata(record: dict, dynamodb_table, set_name: str = None):
-    """Store paper metadata in DynamoDB"""
+    """Store paper metadata in DynamoDB with proper history tracking"""
     try:
-        # Use set from record if provided, otherwise use passed set_name
         set_value = record.get("set", set_name)
         
-        # Extract arxiv ID for S3 key construction
         arxiv_id = record["identifier"].split('/')[-1] if '/' in record["identifier"] else record["identifier"]
         category = record["primary_category"]
         abstract_s3_key = f"papers/{set_value}/{category}/{arxiv_id}.json" if category else None
+        
+        existing_item = dynamodb_table.get_item(Key={"id": record["identifier"]}).get("Item")
+        
+        current_time = datetime.now(timezone.utc).isoformat()
         
         item = {
             "id": record["identifier"],
@@ -109,12 +105,49 @@ def store_paper_metadata(record: dict, dynamodb_table, set_name: str = None):
             "pdf_url": record["abstract_url"].replace("abs", "pdf"),
             "set": set_value,
             "abstract_s3_key": abstract_s3_key,
-            "processed_date": datetime.utcnow().isoformat()
+            "modified_date": current_time
         }
-        dynamodb_table.put_item(Item=item)
+        
+        if not existing_item:
+            item["created_date"] = current_time
+            item["neo4j_status"] = "pending"
+            
+            logger.info(f"New paper added: {record['identifier']}")
+        else:
+            item["created_date"] = existing_item.get("created_date", current_time)
+            
+            content_changed = (
+                existing_item.get("title") != item["title"] or
+                existing_item.get("abstract_s3_key") != abstract_s3_key or
+                existing_item.get("primary_category") != item["primary_category"] or
+                existing_item.get("categories") != item["categories"] or
+                existing_item.get("authors") != item["authors"]
+            )
+            
+            if content_changed:
+                item["neo4j_status"] = "pending"
+                logger.info(f"Paper updated: {record['identifier']}")
+            else:
+                item["neo4j_status"] = existing_item.get("neo4j_status", "pending")
+                logger.debug(f"Paper unchanged: {record['identifier']}")
+        
+        if existing_item:
+            dynamodb_table.put_item(
+                Item=item,
+                ConditionExpression="attribute_exists(id)"
+            )
+        else:
+            dynamodb_table.put_item(
+                Item=item,
+                ConditionExpression="attribute_not_exists(id)"
+            )
+            
     except ClientError as e:
-        logger.error(f"Error storing metadata: {e}")
-        raise
+        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+            logger.warning(f"Concurrent update detected for {record['identifier']}")
+        else:
+            logger.error(f"Error storing metadata: {e}")
+            raise
 
 def upload_to_s3(file_data: BytesIO, key: str, s3_bucket: str, s3_client):
     """Upload file to S3"""
@@ -130,7 +163,6 @@ def fetch_data(base_url: str, from_date: str, set_name: str) -> list:
     full_xml_responses = []
     params = {"verb": "ListRecords", "set": set_name, "metadataPrefix": "oai_dc", "from": from_date}
     
-    # Retry configuration
     max_retries = 5
     base_wait_time = 5  # seconds
     
@@ -156,7 +188,6 @@ def fetch_data(base_url: str, from_date: str, set_name: str) -> list:
                 logging.info(f"Found resumption token: {resumption_token.text}")
                 time.sleep(5)  # Be nice to the server
                 params = {"verb": "ListRecords", "resumptionToken": resumption_token.text}
-                # Reset retry count for new request
                 retry_count = 0
             else:
                 break
@@ -208,7 +239,6 @@ def parse_xml_data(xml_data: str, set_name: str) -> dict:
     """Parses XML data from arXiv"""
     extracted_data = {"records": []}
 
-    # Select the appropriate category dictionary based on set name
     category_dict = {
         "cs": cs_categories_inverted,
         "math": math_categories_inverted,
@@ -218,7 +248,7 @@ def parse_xml_data(xml_data: str, set_name: str) -> dict:
         "q-fin": qfin_categories_inverted,
         "stat": stat_categories_inverted,
         "eess": eess_categories_inverted
-    }.get(set_name, cs_categories_inverted)  # Default to CS if set not recognized
+    }.get(set_name, cs_categories_inverted)
 
     try:
         root = ET.fromstring(xml_data)
@@ -318,28 +348,22 @@ def latex_to_human_readable(latex_str: str) -> str:
 def store_paper_json(record: dict, s3_bucket: str, s3_client, set_name: str):
     """Store individual paper abstract as JSON in S3"""
     try:
-        # Extract arxiv ID from the identifier (which might have a prefix)
         arxiv_id = record["identifier"].split('/')[-1] if '/' in record["identifier"] else record["identifier"]
         
-        # Use primary category for folder structure
         category = record["primary_category"]
         
         if not category:
             logging.warning(f"Paper {arxiv_id} has no primary category, skipping S3 storage")
             return None
             
-        # Create simplified JSON with just the abstract
         paper_data = {
             "abstract": record["abstract"]
         }
         
-        # Convert to JSON
         json_data = json.dumps(paper_data, indent=2)
         
-        # Create S3 key using new structure
         s3_key = f"papers/{set_name}/{category}/{arxiv_id}.json"
         
-        # Upload to S3
         json_buffer = BytesIO(json_data.encode('utf-8'))
         upload_to_s3(json_buffer, s3_key, s3_bucket, s3_client)
         
@@ -350,26 +374,19 @@ def store_paper_json(record: dict, s3_bucket: str, s3_client, set_name: str):
         return None
 
 def main():
-    # Get config once and use it throughout
     config = get_config()
     
     base_url = "http://export.arxiv.org/oai2"
     today = datetime.today()
     
-    # Initialize shared clients
     s3_client = boto3.client('s3')
     dynamodb_client = boto3.resource('dynamodb').Table(config["dynamodb_table"])
     
-    # Process each set
     for set_name, set_config in config["sets"].items():
         logging.info(f"Processing set: {set_name}")
         
-        # Use set specific categories and back_date
         categories = set_config["categories"]
         back_date = set_config["back_date"]
-        
-        # Create set-specific category mapping if needed
-        # For simplicity, we'll still use cs_categories_inverted for all sets
         
         for i in range(back_date):
             date = (today - timedelta(days=i+1)).strftime("%Y-%m-%d")
@@ -387,18 +404,15 @@ def main():
                 all_records.extend(data["records"])
                 
             if all_records:
-                # First store individual paper abstracts in S3
                 for record in all_records:
                     store_paper_json(record, config["s3_bucket"], s3_client, set_name)
                 
-                # Then store metadata for each paper (which now includes S3 key)
                 for record in all_records:
                     store_paper_metadata(record, dynamodb_client, set_name)
 
             else:
                 logging.warning(f"No records found for {set_name}/{date}")
     
-    # If we get here, all sets are processed
     print(json.dumps({"status": "Processing complete"}))
 
 if __name__ == "__main__":
