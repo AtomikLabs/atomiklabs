@@ -345,18 +345,9 @@ def store_paper_json(record: dict):
             logging.warning(f"Paper {arxiv_id} has no primary category, skipping S3 storage")
             return None
             
-        # Create JSON-serializable paper abstract data
+        # Create simplified JSON with just the abstract
         paper_data = {
-            "id": record["identifier"],
-            "title": record["title"],
-            "abstract": record["abstract"],
-            "date": record["date"],
-            "authors": record["authors"],
-            "categories": record["categories"],
-            "primary_category": record["primary_category"],
-            "abstract_url": record["abstract_url"],
-            "pdf_url": record["abstract_url"].replace("abs", "pdf"),
-            "processed_date": datetime.utcnow().isoformat()
+            "abstract": record["abstract"]
         }
         
         # Convert to JSON
