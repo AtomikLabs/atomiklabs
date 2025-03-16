@@ -28,11 +28,6 @@ output "neo4j_ebs_volume_id" {
   value       = aws_ebs_volume.neo4j_data.id
 }
 
-output "neo4j_ssh_command" {
-  description = "SSH command to connect to the Neo4j instance"
-  value       = "ssh ec2-user@${aws_instance.neo4j[0].public_dns}"
-}
-
 output "neo4j_eip" {
   description = "Elastic IP of the Neo4j instance"
   value       = aws_eip.neo4j.public_ip
