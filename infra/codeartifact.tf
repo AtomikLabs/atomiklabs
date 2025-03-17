@@ -9,6 +9,10 @@ resource "aws_codeartifact_repository" "neo4j_client" {
   domain      = aws_codeartifact_domain.domain.domain
   description = "Private repository for atomiklabs Neo4j client"
 
+  upstream {
+    repository_name = aws_codeartifact_repository.python_public.repository
+  }
+
   tags = local.common_tags
 }
 
@@ -38,12 +42,6 @@ resource "aws_codeartifact_repository_permissions_policy" "neo4j_client_policy" 
       }
     ]
   })
-}
-
-resource "aws_codeartifact_repository_upstream_association" "python_public_upstream" {
-  repository          = aws_codeartifact_repository.neo4j_client.repository
-  domain              = aws_codeartifact_domain.domain.domain
-  upstream_repository = aws_codeartifact_repository.python_public.repository
 }
 
 output "codeartifact_repository" {
