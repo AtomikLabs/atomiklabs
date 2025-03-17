@@ -144,16 +144,18 @@ jobs:
           echo "Base version from pyproject.toml: $BASE_VERSION"
           
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            # PR build - use dev version with PR number
+            # PR build - use dev version with PR number 
             PR_NUMBER=${{ github.event.pull_request.number }}
-            DEV_VERSION="${BASE_VERSION}.dev${PR_NUMBER}"
             
-            # If this is not the first build in this PR, add commit count
-            if [[ -n "${{ github.event.pull_request.commits }}" && "${{ github.event.pull_request.commits }}" -gt 1 ]]; then
-              DEV_VERSION="${DEV_VERSION}.$((${{ github.event.pull_request.commits }} - 1))"
-            fi
+            # Use compliant dev version format: X.Y.Z.devN
+            # Combine PR number and commit count to make a unique dev number
+            COMMIT_COUNT="${{ github.event.pull_request.commits }}"
+            DEV_NUM=$((PR_NUMBER * 1000 + COMMIT_COUNT))
             
-            echo "Using PR version: $DEV_VERSION"
+            # PEP 440 compliant development version
+            DEV_VERSION="${BASE_VERSION}.dev${DEV_NUM}"
+            
+            echo "Using PEP 440 compliant PR version: $DEV_VERSION"
             VERSION=$DEV_VERSION
           else
             # Merge to dev - increment patch version
