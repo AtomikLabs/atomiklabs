@@ -144,10 +144,19 @@ jobs:
 
       - name: Build and push ArXiv processor
         working-directory: ./services/arxiv_processor
-        env:
-          IMAGE_TAG: ${{ github.sha }}
         run: |
-          echo "Building ArXiv processor image for repository: ${{ env.ECR_REPO }}"
+          # Get CodeArtifact token and configure pip
+          export CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token \
+            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
+            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+            --query authorizationToken --output text)
+          
+          # Create pip.conf with CodeArtifact configuration
+          echo "[global]" > pip.conf
+          echo "index-url=https://aws:${CODEARTIFACT_AUTH_TOKEN}@atomiklabs-${{ vars.ENVIRONMENT }}-${{ vars.AWS_ACCOUNT_NUM }}.d.codeartifact.${AWS_REGION}.amazonaws.com/pypi/neo4j-client/simple/" >> pip.conf
+          echo "trusted-host=atomiklabs-${{ vars.ENVIRONMENT }}-${{ vars.AWS_ACCOUNT_NUM }}.d.codeartifact.${AWS_REGION}.amazonaws.com" >> pip.conf
+          
+          # Build and push Docker image
           docker build -t ${{ env.ECR_REPO }}:arxiv .
           docker push ${{ env.ECR_REPO }}:arxiv
 
