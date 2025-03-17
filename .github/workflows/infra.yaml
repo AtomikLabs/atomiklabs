@@ -58,7 +58,7 @@ jobs:
           terraform init \
             -backend-config="bucket=${{ vars.AWS_CORE_STATE_S3 }}" \
             -backend-config="region=${{ vars.AWS_REGION }}" \
-            -backend-config="dynamodb_table=terraform-state-lock"
+            -backend-config="use_lockfile=true"
 
       - name: Terraform Plan
         env:
@@ -122,7 +122,7 @@ jobs:
           terraform init \
             -backend-config="bucket=${{ vars.AWS_CORE_STATE_S3 }}" \
             -backend-config="region=${{ vars.AWS_REGION }}" \
-            -backend-config="dynamodb_table=terraform-state-lock"
+            -backend-config="use_lockfile=true"
 
       - name: Get ECR repository URL
         working-directory: ./infra
