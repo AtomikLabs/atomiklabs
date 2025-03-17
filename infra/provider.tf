@@ -4,7 +4,7 @@ terraform {
   backend "s3" {
     key            = "core/terraform.tfstate"
     encrypt        = true
-    dynamodb_table = "terraform-state-lock"
+    use_lockfile   = true
   }
 
   required_providers {

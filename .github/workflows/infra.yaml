@@ -94,6 +94,7 @@ jobs:
           echo "Verifying Lambda function..."
           aws lambda get-function \
             --function-name $(terraform output -raw lambda_function_name) \
+            --region ${{ secrets.AWS_REGION }} \
             --query 'Configuration.[FunctionName,LastModified,CodeSize]' \
             --output table
 
