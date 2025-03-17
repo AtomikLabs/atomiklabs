@@ -196,8 +196,8 @@ jobs:
         run: |
           aws codeartifact login \
             --tool twine \
-            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
             --repository neo4j-client \
+            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
             --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
             --region ${{ secrets.AWS_REGION }}
 
@@ -207,5 +207,6 @@ jobs:
           CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token \
             --domain atomiklabs-${{ vars.ENVIRONMENT }} \
             --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+            --region ${{ secrets.AWS_REGION }} \
             --query authorizationToken --output text)
           TWINE_USERNAME=aws TWINE_PASSWORD=${CODEARTIFACT_AUTH_TOKEN} twine upload --repository codeartifact dist/*
