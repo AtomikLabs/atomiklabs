@@ -129,6 +129,10 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Configure Docker credentials
+        run: |
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_REPO }}
+
       - name: Build and push Newsletter processor
         working-directory: ./services/newsletter_processor
         env:
