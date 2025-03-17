@@ -1,0 +1,18 @@
+[project]
+name = "atomiklabs-neo4j-client"
+version = "0.1.0"
+description = "Neo4j client"
+authors = [
+    { name = "Brad Edwards", email = "j.bradley.edwards@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+]
+
+[tool.poetry]
+packages = [{include = "atomiklabs", from = "src"}]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
