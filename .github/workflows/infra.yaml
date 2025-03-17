@@ -90,13 +90,6 @@ jobs:
           TF_VAR_neo4j_password: ${{ secrets.NEO4J_PASSWORD }}
         run: |
           terraform apply -auto-approve tfplan
-          
-          echo "Verifying Lambda function..."
-          aws lambda get-function \
-            --function-name $(terraform output -raw lambda_function_name) \
-            --region ${{ secrets.AWS_REGION }} \
-            --query 'Configuration.[FunctionName,LastModified,CodeSize]' \
-            --output table
 
   build-and-push:
     needs: terraform
