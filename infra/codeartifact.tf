@@ -24,7 +24,6 @@ resource "aws_codeartifact_repository" "python_public" {
   tags = local.common_tags
 }
 
-# Use the newer resource format for upstream association
 resource "aws_codeartifact_repository_permissions_policy" "neo4j_client_policy" {
   domain      = aws_codeartifact_domain.domain.domain
   repository  = aws_codeartifact_repository.neo4j_client.repository
@@ -39,6 +38,12 @@ resource "aws_codeartifact_repository_permissions_policy" "neo4j_client_policy" 
       }
     ]
   })
+}
+
+resource "aws_codeartifact_repository_upstream_association" "python_public_upstream" {
+  repository          = aws_codeartifact_repository.neo4j_client.repository
+  domain              = aws_codeartifact_domain.domain.domain
+  upstream_repository = aws_codeartifact_repository.python_public.repository
 }
 
 output "codeartifact_repository" {
