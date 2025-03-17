@@ -27,7 +27,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_CI_CD_ROLE }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -58,7 +58,7 @@ jobs:
           terraform init \
             -backend-config="bucket=${{ vars.AWS_CORE_STATE_S3 }}" \
             -backend-config="region=${{ vars.AWS_REGION }}" \
-            -backend-config="dynamodb_table=terraform-state-lock"
+            -backend-config="use_lockfile=true"
 
       - name: Terraform Plan
         env:
@@ -90,15 +90,166 @@ jobs:
           TF_VAR_neo4j_password: ${{ secrets.NEO4J_PASSWORD }}
         run: |
           terraform apply -auto-approve tfplan
+
+  publish-neo4j-client:
+    needs: terraform
+    runs-on: ubuntu-latest
+    environment: dev
+    outputs:
+      package-version: ${{ steps.set-version.outputs.version }}
+    
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4.1.0
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_CD_ROLE }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Check for changes in Neo4j client
+        id: check-changes
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "Running in PR context - will build and publish dev version"
+            echo "changes=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -q "packages/atomiklabs-neo4j-client/"; then
+              echo "Changes detected in Neo4j client package"
+              echo "changes=true" >> $GITHUB_OUTPUT
+            else
+              echo "No changes detected in Neo4j client package"
+              echo "changes=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "Not a PR or push to dev - not publishing"
+            echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set package version
+        if: steps.check-changes.outputs.changes == 'true'
+        id: set-version
+        run: |
+          cd packages/atomiklabs-neo4j-client
+          BASE_VERSION=$(grep 'version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "Base version from pyproject.toml: $BASE_VERSION"
           
-          echo "Verifying Lambda function..."
-          aws lambda get-function \
-            --function-name $(terraform output -raw lambda_function_name) \
-            --query 'Configuration.[FunctionName,LastModified,CodeSize]' \
-            --output table
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # PR build - use dev version with PR number 
+            PR_NUMBER=${{ github.event.pull_request.number }}
+            
+            # Use compliant dev version format: X.Y.Z.devN
+            # Combine PR number and commit count to make a unique dev number
+            COMMIT_COUNT="${{ github.event.pull_request.commits }}"
+            DEV_NUM=$((PR_NUMBER * 1000 + COMMIT_COUNT))
+            
+            # PEP 440 compliant development version
+            DEV_VERSION="${BASE_VERSION}.dev${DEV_NUM}"
+            
+            echo "Using PEP 440 compliant PR version: $DEV_VERSION"
+            VERSION=$DEV_VERSION
+          else
+            # Merge to dev - increment patch version
+            IFS='.' read -ra PARTS <<< "$BASE_VERSION"
+            PARTS[2]=$((PARTS[2] + 1))
+            VERSION="${PARTS[0]}.${PARTS[1]}.${PARTS[2]}"
+            echo "Using release version: $VERSION"
+          fi
+          
+          # Update pyproject.toml with new version
+          sed -i "s/version = \"$BASE_VERSION\"/version = \"$VERSION\"/" pyproject.toml
+          cat pyproject.toml | grep version
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Configure CodeArtifact for dev versions
+        if: github.event_name == 'pull_request' && steps.check-changes.outputs.changes == 'true'
+        run: |
+          # Mark dev versions as UNFINISHED so they can be overwritten
+          aws codeartifact update-package-versions-status \
+            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
+            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+            --repository neo4j-client \
+            --format pypi \
+            --package atomiklabs-neo4j-client \
+            --version-status UNFINISHED \
+            --versions "${{ steps.set-version.outputs.version }}" || true
+
+      - name: Install build dependencies
+        if: steps.check-changes.outputs.changes == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine poetry
+
+      - name: Build package
+        if: steps.check-changes.outputs.changes == 'true'
+        working-directory: ./packages/atomiklabs-neo4j-client
+        run: |
+          poetry build
+          echo "Package contents:"
+          ls -la dist/
+
+      - name: Configure CodeArtifact access
+        if: steps.check-changes.outputs.changes == 'true'
+        run: |
+          aws codeartifact login \
+            --tool twine \
+            --repository neo4j-client \
+            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
+            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+            --region ${{ vars.AWS_REGION }}
+
+      - name: Publish package
+        if: steps.check-changes.outputs.changes == 'true'
+        working-directory: ./packages/atomiklabs-neo4j-client
+        run: |
+          CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token \
+            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
+            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+            --region ${{ vars.AWS_REGION }} \
+            --query authorizationToken --output text)
+          
+          # Add --skip-existing for production versions to avoid failures
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TWINE_USERNAME=aws TWINE_PASSWORD=${CODEARTIFACT_AUTH_TOKEN} twine upload --repository codeartifact --skip-existing dist/*
+          else
+            TWINE_USERNAME=aws TWINE_PASSWORD=${CODEARTIFACT_AUTH_TOKEN} twine upload --repository codeartifact dist/*
+          fi
+          
+          echo "Published version ${{ steps.set-version.outputs.version }} to CodeArtifact"
+
+      - name: Update service requirements for PR builds
+        if: github.event_name == 'pull_request' && steps.check-changes.outputs.changes == 'true'
+        run: |
+          VERSION="${{ steps.set-version.outputs.version }}"
+          echo "Updating service requirements to use version $VERSION"
+          
+          # Update each service's requirements.txt
+          for SERVICE in arxiv_processor newsletter_processor nvd_checker; do
+            if [ -f "services/$SERVICE/requirements.txt" ]; then
+              echo "Updating services/$SERVICE/requirements.txt"
+              # Replace version if already exists, otherwise add it
+              if grep -q "atomiklabs-neo4j-client==" services/$SERVICE/requirements.txt; then
+                sed -i "s/atomiklabs-neo4j-client==.*/atomiklabs-neo4j-client==$VERSION/" services/$SERVICE/requirements.txt
+              else
+                echo "atomiklabs-neo4j-client==$VERSION" >> services/$SERVICE/requirements.txt
+              fi
+              cat services/$SERVICE/requirements.txt | grep atomiklabs-neo4j-client
+            else
+              echo "File services/$SERVICE/requirements.txt not found"
+            fi
+          done
 
   build-and-push:
-    needs: terraform
+    needs: publish-neo4j-client
     runs-on: ubuntu-latest
     environment: dev
     
@@ -111,7 +262,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_CI_CD_ROLE }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -122,7 +273,7 @@ jobs:
           terraform init \
             -backend-config="bucket=${{ vars.AWS_CORE_STATE_S3 }}" \
             -backend-config="region=${{ vars.AWS_REGION }}" \
-            -backend-config="dynamodb_table=terraform-state-lock"
+            -backend-config="use_lockfile=true"
 
       - name: Get ECR repository URL
         working-directory: ./infra
@@ -135,6 +286,29 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Configure Docker credentials
+        run: |
+          aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin 920372995176.dkr.ecr.us-east-1.amazonaws.com
+
+      - name: Get CodeArtifact token and create pip.conf files
+        run: |
+          # Get CodeArtifact token once
+          CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token \
+            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
+            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+            --query authorizationToken --output text)
+          
+          # Create pip.conf for each service
+          for SERVICE in newsletter_processor arxiv_processor nvd_checker; do
+            echo "[global]" > ./services/$SERVICE/pip.conf
+            echo "index-url=https://aws:${CODEARTIFACT_AUTH_TOKEN}@atomiklabs-${{ vars.ENVIRONMENT }}-${{ vars.AWS_ACCOUNT_NUM }}.d.codeartifact.${{ vars.AWS_REGION }}.amazonaws.com/pypi/neo4j-client/simple/" >> ./services/$SERVICE/pip.conf
+            echo "trusted-host=atomiklabs-${{ vars.ENVIRONMENT }}-${{ vars.AWS_ACCOUNT_NUM }}.d.codeartifact.${{ vars.AWS_REGION }}.amazonaws.com" >> ./services/$SERVICE/pip.conf
+          done
+          
+          # Verify pip.conf files were created
+          echo "Verifying pip.conf files:"
+          ls -la ./services/*/pip.conf
+
       - name: Build and push Newsletter processor
         working-directory: ./services/newsletter_processor
         env:
@@ -146,8 +320,6 @@ jobs:
 
       - name: Build and push ArXiv processor
         working-directory: ./services/arxiv_processor
-        env:
-          IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "Building ArXiv processor image for repository: ${{ env.ECR_REPO }}"
           docker build -t ${{ env.ECR_REPO }}:arxiv .
