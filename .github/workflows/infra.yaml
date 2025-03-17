@@ -192,7 +192,7 @@ jobs:
         run: |
           aws codeartifact login \
             --tool twine \
-            --domain atomiklabs \
+            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
             --repository neo4j-client \
             --region ${{ secrets.AWS_REGION }}
 
