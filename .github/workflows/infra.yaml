@@ -198,10 +198,14 @@ jobs:
             --tool twine \
             --domain atomiklabs-${{ vars.ENVIRONMENT }} \
             --repository neo4j-client \
+            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
             --region ${{ secrets.AWS_REGION }}
 
       - name: Publish package
         working-directory: ./packages/atomiklabs-neo4j-client
         run: |
-          CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token --domain atomiklabs --query authorizationToken --output text)
+          CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token \
+            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
+            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+            --query authorizationToken --output text)
           TWINE_USERNAME=aws TWINE_PASSWORD=${CODEARTIFACT_AUTH_TOKEN} twine upload --repository codeartifact dist/*
