@@ -90,7 +90,12 @@ def store_paper_metadata(record: dict, dynamodb_table, set_name: str = None):
         category = record["primary_category"]
         abstract_s3_key = f"papers/{set_value}/{category}/{arxiv_id}.json" if category else None
         
-        existing_item = dynamodb_table.get_item(Key={"id": record["identifier"]}).get("Item")
+        existing_item = dynamodb_table.get_item(
+            Key={
+                "id": record["identifier"],
+                "date": record["date"]
+            }
+        ).get("Item")
         
         current_time = datetime.now(timezone.utc).isoformat()
         
@@ -134,12 +139,14 @@ def store_paper_metadata(record: dict, dynamodb_table, set_name: str = None):
         if existing_item:
             dynamodb_table.put_item(
                 Item=item,
-                ConditionExpression="attribute_exists(id)"
+                ConditionExpression="attribute_exists(id) AND attribute_exists(#date)",
+                ExpressionAttributeNames={"#date": "date"}
             )
         else:
             dynamodb_table.put_item(
                 Item=item,
-                ConditionExpression="attribute_not_exists(id)"
+                ConditionExpression="attribute_not_exists(id) OR attribute_not_exists(#date)",
+                ExpressionAttributeNames={"#date": "date"}
             )
             
     except ClientError as e:
