@@ -15,6 +15,9 @@ from docx import Document
 from botocore.exceptions import ClientError
 
 from constants import *
+from atomiklabs.neo4j.client import Neo4jClient
+from atomiklabs.neo4j.models import Paper, Author, Category, Set
+from atomiklabs.neo4j.exceptions import Neo4jError, Neo4jNodeNotFoundError
 
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
@@ -31,7 +34,11 @@ def get_config():
         global_params = ssm.get_parameters(
             Names=[
                 f"{config_path}/arxiv/s3_bucket",
-                f"{config_path}/arxiv/dynamodb_table"
+                f"{config_path}/arxiv/dynamodb_table",
+                f"{config_path}/neo4j/uri",
+                f"{config_path}/neo4j/username",
+                f"{config_path}/neo4j/password",
+                f"{config_path}/neo4j/database"
             ]
         )
         
@@ -81,8 +88,95 @@ DYNAMODB_TABLE = config['dynamodb_table']
 s3 = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb').Table(DYNAMODB_TABLE)
 
-def store_paper_metadata(record: dict, dynamodb_table, set_name: str = None):
-    """Store paper metadata in DynamoDB with proper history tracking"""
+def check_existing_metadata(record: dict, dynamodb_table) -> bool:
+    """Check if paper already exists in DynamoDB"""
+    existing_item = dynamodb_table.get_item(
+            Key={
+                "id": record["identifier"],
+                "date": record["date"]
+            }
+        ).get("Item")
+    
+    return existing_item is not None
+
+def put_paper_metadata(item: dict, dynamodb_table, existing_item: bool):
+    """Put paper metadata in DynamoDB"""
+    try:
+        if existing_item:
+            dynamodb_table.put_item(
+                Item=item,
+                ConditionExpression="attribute_exists(id) AND attribute_exists(#date)",
+                ExpressionAttributeNames={"#date": "date"}
+            )
+        else:
+            dynamodb_table.put_item(
+                Item=item,
+                ConditionExpression="attribute_not_exists(id) OR attribute_not_exists(#date)",
+                ExpressionAttributeNames={"#date": "date"}
+            )
+    except ClientError as e:
+        logger.error(f"Error storing metadata: {e}")
+        raise        
+
+def check_existing_node(record: dict, neo4j_client: Neo4jClient) -> bool:
+    """Check if paper already exists in Neo4j
+    
+    Args:
+        record: Paper record dictionary
+        neo4j_client: Neo4j client instance
+        
+    Returns:
+        True if paper exists, False otherwise
+    """
+    try:
+        paper_id = record["identifier"]
+        neo4j_client.get_node_by_id(Paper, paper_id)
+        logger.debug(f"Paper {paper_id} exists in Neo4j")
+        return True
+    except Neo4jNodeNotFoundError:
+        logger.debug(f"Paper {paper_id} does not exist in Neo4j")
+        return False
+    except Neo4jError as e:
+        logger.error(f"Error checking Neo4j for {record['identifier']}: {e}")
+        return False
+
+def put_paper_node(record: dict, neo4j_client: Neo4jClient) -> bool:
+    """Put paper node in Neo4j
+    
+    Creates a complete graph structure for an arXiv paper, including:
+    - Paper node
+    - Author nodes with relationships
+    - Category nodes with relationships
+    - Set node with relationship
+    
+    Args:
+        record: Paper record dictionary
+        neo4j_client: Neo4j client instance
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Create the complete paper graph in Neo4j
+        paper = neo4j_client.create_arxiv_paper_graph(record)
+        logger.info(f"Created/updated Neo4j graph for paper {record['identifier']}")
+        return True
+    except Neo4jError as e:
+        logger.error(f"Error creating Neo4j graph for {record['identifier']}: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error creating Neo4j graph for {record['identifier']}: {e}")
+        return False
+
+def store_paper_metadata(record: dict, dynamodb_table, neo4j_client: Neo4jClient = None, set_name: str = None):
+    """Store paper metadata in DynamoDB with proper history tracking and Neo4j sync
+    
+    Args:
+        record: Paper record dictionary
+        dynamodb_table: DynamoDB table instance
+        neo4j_client: Neo4j client instance (optional)
+        set_name: arXiv set name (optional)
+    """
     try:
         set_value = record.get("set", set_name)
         
@@ -90,12 +184,7 @@ def store_paper_metadata(record: dict, dynamodb_table, set_name: str = None):
         category = record["primary_category"]
         abstract_s3_key = f"papers/{set_value}/{category}/{arxiv_id}.json" if category else None
         
-        existing_item = dynamodb_table.get_item(
-            Key={
-                "id": record["identifier"],
-                "date": record["date"]
-            }
-        ).get("Item")
+        existing_item = check_existing_metadata(record, dynamodb_table)
         
         current_time = datetime.now(timezone.utc).isoformat()
         
@@ -113,9 +202,29 @@ def store_paper_metadata(record: dict, dynamodb_table, set_name: str = None):
             "modified_date": current_time
         }
         
+        neo4j_status = "pending"
+        
+        # Check if we should update Neo4j
+        if neo4j_client:
+            neo4j_exists = check_existing_node(record, neo4j_client)
+            
+            if neo4j_exists:
+                # If it exists in Neo4j, we'll update it
+                logger.debug(f"Paper {record['identifier']} exists in Neo4j, will update")
+            
+            # Try to put/update the paper in Neo4j
+            neo4j_success = put_paper_node(record, neo4j_client)
+            
+            if neo4j_success:
+                neo4j_status = "synced"
+                logger.info(f"Paper {record['identifier']} synced to Neo4j")
+            else:
+                neo4j_status = "failed"
+                logger.warning(f"Failed to sync paper {record['identifier']} to Neo4j")
+        
         if not existing_item:
             item["created_date"] = current_time
-            item["neo4j_status"] = "pending"
+            item["neo4j_status"] = neo4j_status
             
             logger.info(f"New paper added: {record['identifier']}")
         else:
@@ -130,24 +239,17 @@ def store_paper_metadata(record: dict, dynamodb_table, set_name: str = None):
             )
             
             if content_changed:
-                item["neo4j_status"] = "pending"
+                item["neo4j_status"] = neo4j_status
                 logger.info(f"Paper updated: {record['identifier']}")
             else:
-                item["neo4j_status"] = existing_item.get("neo4j_status", "pending")
+                # Keep existing status if nothing changed and we didn't update Neo4j
+                if neo4j_client:
+                    item["neo4j_status"] = neo4j_status
+                else:
+                    item["neo4j_status"] = existing_item.get("neo4j_status", "pending")
                 logger.debug(f"Paper unchanged: {record['identifier']}")
-        
-        if existing_item:
-            dynamodb_table.put_item(
-                Item=item,
-                ConditionExpression="attribute_exists(id) AND attribute_exists(#date)",
-                ExpressionAttributeNames={"#date": "date"}
-            )
-        else:
-            dynamodb_table.put_item(
-                Item=item,
-                ConditionExpression="attribute_not_exists(id) OR attribute_not_exists(#date)",
-                ExpressionAttributeNames={"#date": "date"}
-            )
+
+        put_paper_metadata(item, dynamodb_table, existing_item)
             
     except ClientError as e:
         if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
@@ -389,36 +491,65 @@ def main():
     s3_client = boto3.client('s3')
     dynamodb_client = boto3.resource('dynamodb').Table(config["dynamodb_table"])
     
-    for set_name, set_config in config["sets"].items():
-        logging.info(f"Processing set: {set_name}")
-        
-        categories = set_config["categories"]
-        back_date = set_config["back_date"]
-        
-        for i in range(back_date):
-            date = (today - timedelta(days=i+1)).strftime("%Y-%m-%d")
-            logging.info(f"Processing papers for {set_name}/{date}")
+    # Initialize Neo4j client if configuration is available
+    neo4j_client = None
+    try:
+        if all(key in config for key in ["uri", "username", "password"]):
+            neo4j_client = Neo4jClient(
+                uri=config["uri"],
+                username=config["username"],
+                password=config["password"],
+                database=config.get("database", "neo4j")
+            )
+            # Verify Neo4j connection and schema
+            schema_status = neo4j_client.verify_schema()
+            logger.info(f"Neo4j schema status: {schema_status}")
+            if not all(schema_status["constraints"].values()) or not all(schema_status["indexes"].values()):
+                logger.warning("Neo4j schema is not fully set up. Setting up now...")
+                neo4j_client.setup_schema()
+            logger.info("Neo4j client initialized")
+        else:
+            logger.warning("Neo4j configuration incomplete, skipping Neo4j integration")
+    except Exception as e:
+        logger.error(f"Failed to initialize Neo4j client: {e}")
+        neo4j_client = None
+    
+    try:
+        for set_name, set_config in config["sets"].items():
+            logging.info(f"Processing set: {set_name}")
             
-            xml_responses = fetch_data(base_url, date, set_name)
+            categories = set_config["categories"]
+            back_date = set_config["back_date"]
             
-            if not xml_responses:
-                logging.warning(f"No data retrieved for {set_name}/{date}. Skipping...")
-                continue
+            for i in range(back_date):
+                date = (today - timedelta(days=i+1)).strftime("%Y-%m-%d")
+                logging.info(f"Processing papers for {set_name}/{date}")
                 
-            all_records = []
-            for xml in xml_responses:
-                data = parse_xml_data(xml, set_name)
-                all_records.extend(data["records"])
+                xml_responses = fetch_data(base_url, date, set_name)
                 
-            if all_records:
-                for record in all_records:
-                    store_paper_json(record, config["s3_bucket"], s3_client, set_name)
-                
-                for record in all_records:
-                    store_paper_metadata(record, dynamodb_client, set_name)
-
-            else:
-                logging.warning(f"No records found for {set_name}/{date}")
+                if not xml_responses:
+                    logging.warning(f"No data retrieved for {set_name}/{date}. Skipping...")
+                    continue
+                    
+                all_records = []
+                for xml in xml_responses:
+                    data = parse_xml_data(xml, set_name)
+                    all_records.extend(data["records"])
+                    
+                if all_records:
+                    for record in all_records:
+                        store_paper_json(record, config["s3_bucket"], s3_client, set_name)
+                    
+                    for record in all_records:
+                        store_paper_metadata(record, dynamodb_client, neo4j_client, set_name)
+    
+                else:
+                    logging.warning(f"No records found for {set_name}/{date}")
+    finally:
+        # Close Neo4j connection
+        if neo4j_client:
+            neo4j_client.close()
+            logger.info("Neo4j connection closed")
     
     print(json.dumps({"status": "Processing complete"}))
 
