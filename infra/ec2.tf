@@ -206,11 +206,12 @@ EOF_SCRIPT
 
 chmod +x /usr/local/bin/start-neo4j.sh
 
-# Create systemd service without variable substitution
+# Create systemd service with proper dependencies
 cat > /etc/systemd/system/neo4j-docker.service << 'EOF_SERVICE'
 [Unit]
 Description=Neo4j Docker Container
-After=docker.service
+After=docker.service cloud-final.service network-online.target
+Wants=docker.service cloud-final.service network-online.target
 Requires=docker.service
 
 [Service]
@@ -221,13 +222,12 @@ Restart=on-failure
 RestartSec=10
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=multi-user.target cloud-init.target
 EOF_SERVICE
 
-# Enable and start the neo4j service
+# Set it to start on boot, but don't start it immediately
 systemctl daemon-reload
 systemctl enable neo4j-docker.service
-systemctl start neo4j-docker.service
 
 echo "Neo4j setup complete!"
 EOF
