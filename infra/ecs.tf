@@ -78,6 +78,7 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
         ]
         Resource = [
           "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/${var.environment}/arxiv/*",
+          "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/${var.environment}/neo4j/*"
         ]
       }
     ]
