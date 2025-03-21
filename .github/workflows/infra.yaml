@@ -97,11 +97,11 @@ jobs:
           
           # Configure Python-Public repository to connect to PyPI
           echo "Configuring Python Public repository..."
-          aws codeartifact update-repository \
+          aws codeartifact associate-external-connection \
             --domain atomiklabs-${{ vars.ENVIRONMENT }} \
             --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
             --repository python-public \
-            --external-connections public:pypi
+            --external-connection public:pypi
 
           # Configure Neo4j client repository to use python-public as upstream
           echo "Configuring Neo4j client repository..."
@@ -119,7 +119,7 @@ jobs:
           
           for PKG in "${PACKAGES[@]}"; do
             echo "Setting origin controls for $PKG..."
-            aws codeartifact update-package-origin-configuration \
+            aws codeartifact put-package-origin-configuration \
               --domain atomiklabs-${{ vars.ENVIRONMENT }} \
               --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
               --repository neo4j-client \
