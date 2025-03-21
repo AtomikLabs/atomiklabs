@@ -96,11 +96,6 @@ jobs:
         run: |
           cd infra
           terraform apply -auto-approve
-          
-      - name: Configure CodeArtifact upstream dependencies
-        if: false  # Disable this step as it's now done properly during initial setup
-        run: |
-          echo "This step is now disabled as the CodeArtifact configuration is done properly during initial setup"
 
   publish-neo4j-client:
     needs: terraform
@@ -181,6 +176,30 @@ jobs:
           echo "Package contents:"
           ls -la dist/
 
+      - name: Setup GitHub Packages
+        if: steps.check-changes.outputs.changes == 'true'
+        run: |
+          # Create .pypirc file for GitHub Packages
+          echo "[distutils]" > ~/.pypirc
+          echo "index-servers = github" >> ~/.pypirc
+          echo "[github]" >> ~/.pypirc
+          echo "repository = https://maven.pkg.github.com/${{ github.repository }}" >> ~/.pypirc
+          echo "username = ${{ github.actor }}" >> ~/.pypirc
+          echo "password = ${{ secrets.GITHUB_TOKEN }}" >> ~/.pypirc
+
+      - name: Publish package
+        if: steps.check-changes.outputs.changes == 'true'
+        working-directory: ./packages/atomiklabs-neo4j-client
+        run: |
+          # Add --skip-existing for production versions to avoid failures
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            twine upload --repository github --skip-existing dist/*
+          else
+            twine upload --repository github dist/*
+          fi
+          
+          echo "Published version ${{ steps.set-version.outputs.version }} to GitHub Packages"
+
       - name: Update service requirements for PR builds
         if: github.event_name == 'pull_request' && steps.check-changes.outputs.changes == 'true'
         run: |
@@ -245,20 +264,14 @@ jobs:
         run: |
           aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin 920372995176.dkr.ecr.us-east-1.amazonaws.com
 
-      - name: Get CodeArtifact token and create pip.conf files
+      - name: Create pip.conf files with GitHub Packages
         run: |
-          # Get CodeArtifact token once
-          CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token \
-            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
-            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
-            --query authorizationToken --output text)
-          
-          # Create pip.conf for each service with both CodeArtifact and PyPI
+          # Create pip.conf for each service to use GitHub Packages
           for SERVICE in newsletter_processor arxiv_processor nvd_checker; do
             echo "[global]" > ./services/$SERVICE/pip.conf
-            echo "index-url=https://aws:${CODEARTIFACT_AUTH_TOKEN}@atomiklabs-${{ vars.ENVIRONMENT }}-${{ vars.AWS_ACCOUNT_NUM }}.d.codeartifact.${{ vars.AWS_REGION }}.amazonaws.com/pypi/neo4j-client/simple/" >> ./services/$SERVICE/pip.conf
-            echo "extra-index-url=https://pypi.org/simple/" >> ./services/$SERVICE/pip.conf
-            echo "trusted-host=atomiklabs-${{ vars.ENVIRONMENT }}-${{ vars.AWS_ACCOUNT_NUM }}.d.codeartifact.${{ vars.AWS_REGION }}.amazonaws.com pypi.org" >> ./services/$SERVICE/pip.conf
+            echo "index-url=https://pypi.org/simple/" >> ./services/$SERVICE/pip.conf
+            echo "extra-index-url=https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@maven.pkg.github.com/${{ github.repository }}/simple/" >> ./services/$SERVICE/pip.conf
+            echo "trusted-host=pypi.org maven.pkg.github.com" >> ./services/$SERVICE/pip.conf
           done
           
           # Verify pip.conf files were created
