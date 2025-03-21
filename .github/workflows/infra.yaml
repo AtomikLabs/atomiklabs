@@ -100,18 +100,38 @@ jobs:
       - name: Configure CodeArtifact upstream dependencies
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          # Configure repositories to allow upstream dependencies
+          echo "Configuring CodeArtifact to allow upstream dependencies..."
+          
+          # Configure Python Public repository to fetch from PyPI
           aws codeartifact update-repository \
             --domain atomiklabs-${{ vars.ENVIRONMENT }} \
             --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
             --repository python-public \
             --upstreams-mode ALLOW
 
+          # Configure Neo4J Client repository to fetch from Python Public
           aws codeartifact update-repository \
             --domain atomiklabs-${{ vars.ENVIRONMENT }} \
             --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
             --repository neo4j-client \
             --upstreams-mode ALLOW
+          
+          # Configure package-specific origin controls for neo4j to allow upstream
+          aws codeartifact update-package-origin-configuration \
+            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
+            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+            --repository neo4j-client \
+            --format pypi \
+            --package neo4j \
+            --restrictions upstream=ALLOW
+          
+          # Verify the package origin controls for neo4j
+          aws codeartifact get-package-origin-configuration \
+            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
+            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+            --repository neo4j-client \
+            --format pypi \
+            --package neo4j
             
           echo "CodeArtifact upstream dependencies configured"
 
