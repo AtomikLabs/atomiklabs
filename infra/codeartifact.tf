@@ -16,6 +16,15 @@ resource "aws_codeartifact_repository" "neo4j_client" {
   tags = local.common_tags
 }
 
+# Update neo4j client repository upstream configuration
+resource "aws_codeartifact_repository_upstream_configuration" "allow_upstream_deps" {
+  repository      = aws_codeartifact_repository.neo4j_client.repository
+  domain          = aws_codeartifact_domain.domain.domain
+  upstream_configuration {
+    allow_upstream_dependencies = true
+  }
+}
+
 resource "aws_codeartifact_repository" "python_public" {
   repository  = "python-public"
   domain      = aws_codeartifact_domain.domain.domain
