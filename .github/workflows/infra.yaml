@@ -176,26 +176,25 @@ jobs:
           echo "Package contents:"
           ls -la dist/
 
-      - name: Setup GitHub Packages
+      - name: Publish package to GitHub Packages
         if: steps.check-changes.outputs.changes == 'true'
+        working-directory: ./packages/atomiklabs-neo4j-client
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Create .pypirc file for GitHub Packages
+          # Configure GitHub Packages with the GitHub Token
           echo "[distutils]" > ~/.pypirc
           echo "index-servers = github" >> ~/.pypirc
           echo "[github]" >> ~/.pypirc
-          echo "repository = https://maven.pkg.github.com/${{ github.repository }}" >> ~/.pypirc
+          echo "repository = https://upload.pkg.github.com/${{ github.repository }}" >> ~/.pypirc
           echo "username = ${{ github.actor }}" >> ~/.pypirc
           echo "password = ${{ secrets.GITHUB_TOKEN }}" >> ~/.pypirc
-
-      - name: Publish package
-        if: steps.check-changes.outputs.changes == 'true'
-        working-directory: ./packages/atomiklabs-neo4j-client
-        run: |
+          
           # Add --skip-existing for production versions to avoid failures
           if [[ "${{ github.event_name }}" == "push" ]]; then
-            twine upload --repository github --skip-existing dist/*
+            python -m twine upload --repository github --skip-existing dist/*
           else
-            twine upload --repository github dist/*
+            python -m twine upload --repository github dist/*
           fi
           
           echo "Published version ${{ steps.set-version.outputs.version }} to GitHub Packages"
@@ -264,20 +263,24 @@ jobs:
         run: |
           aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin 920372995176.dkr.ecr.us-east-1.amazonaws.com
 
-      - name: Create pip.conf files with GitHub Packages
+      - name: Create pip.conf files for PyPI and GitHub install file for arxiv_processor
         run: |
-          # Create pip.conf for each service to use GitHub Packages
+          # Create pip.conf for each service to use PyPI
           for SERVICE in newsletter_processor arxiv_processor nvd_checker; do
             echo "[global]" > ./services/$SERVICE/pip.conf
             echo "index-url=https://pypi.org/simple/" >> ./services/$SERVICE/pip.conf
-            echo "extra-index-url=https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@maven.pkg.github.com/${{ github.repository }}/simple/" >> ./services/$SERVICE/pip.conf
-            echo "trusted-host=pypi.org maven.pkg.github.com" >> ./services/$SERVICE/pip.conf
+            echo "trusted-host=pypi.org" >> ./services/$SERVICE/pip.conf
           done
           
-          # Verify pip.conf files were created
-          echo "Verifying pip.conf files:"
-          ls -la ./services/*/pip.conf
-          cat ./services/arxiv_processor/pip.conf
+          # Only the arxiv_processor needs the neo4j client
+          # Create a GitHub packages install file for it
+          VERSION="${{ needs.publish-neo4j-client.outputs.package-version }}"
+          if [ -n "$VERSION" ]; then
+            echo "Creating GitHub install file for neo4j client in arxiv_processor"
+            echo "# Install atomiklabs-neo4j-client directly from GitHub" > ./services/arxiv_processor/github_packages.txt
+            echo "git+https://github.com/${{ github.repository }}.git@main#egg=atomiklabs-neo4j-client&subdirectory=packages/atomiklabs-neo4j-client" >> ./services/arxiv_processor/github_packages.txt
+            cat ./services/arxiv_processor/github_packages.txt
+          fi
 
       - name: Build and push Newsletter processor
         working-directory: ./services/newsletter_processor
