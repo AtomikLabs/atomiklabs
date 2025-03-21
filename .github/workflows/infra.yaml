@@ -135,39 +135,25 @@ jobs:
             echo "changes=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Set package version
+      - name: Set version number
         if: steps.check-changes.outputs.changes == 'true'
         id: set-version
+        working-directory: ./packages/atomiklabs-neo4j-client
         run: |
-          cd packages/atomiklabs-neo4j-client
-          BASE_VERSION=$(grep 'version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
-          echo "Base version from pyproject.toml: $BASE_VERSION"
+          VERSION="0.1.0"
           
+          # For PR builds, add dev suffix with run number
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            # PR build - use dev version with PR number 
-            PR_NUMBER=${{ github.event.pull_request.number }}
-            
-            # Use compliant dev version format: X.Y.Z.devN
-            # Combine PR number and commit count to make a unique dev number
-            COMMIT_COUNT="${{ github.event.pull_request.commits }}"
-            DEV_NUM=$((PR_NUMBER * 1000 + COMMIT_COUNT))
-            
-            # PEP 440 compliant development version
-            DEV_VERSION="${BASE_VERSION}.dev${DEV_NUM}"
-            
-            echo "Using PEP 440 compliant PR version: $DEV_VERSION"
-            VERSION=$DEV_VERSION
-          else
-            # Merge to dev - increment patch version
-            IFS='.' read -ra PARTS <<< "$BASE_VERSION"
-            PARTS[2]=$((PARTS[2] + 1))
-            VERSION="${PARTS[0]}.${PARTS[1]}.${PARTS[2]}"
-            echo "Using release version: $VERSION"
+            VERSION="${VERSION}.dev${{ github.run_number }}"
           fi
           
-          # Update pyproject.toml with new version
-          sed -i "s/version = \"$BASE_VERSION\"/version = \"$VERSION\"/" pyproject.toml
-          cat pyproject.toml | grep version
+          echo "Setting version to $VERSION"
+          
+          # Update version in setup.py
+          sed -i "s/version=\"[0-9]*\.[0-9]*\.[0-9]*.*\"/version=\"$VERSION\"/" setup.py
+          
+          # Verify version is set
+          grep "version" setup.py
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Configure CodeArtifact for dev versions
@@ -187,13 +173,13 @@ jobs:
         if: steps.check-changes.outputs.changes == 'true'
         run: |
           python -m pip install --upgrade pip
-          pip install build twine poetry
+          pip install build twine setuptools wheel
 
       - name: Build package
         if: steps.check-changes.outputs.changes == 'true'
         working-directory: ./packages/atomiklabs-neo4j-client
         run: |
-          poetry build
+          python -m build
           echo "Package contents:"
           ls -la dist/
 
@@ -214,7 +200,6 @@ jobs:
           CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token \
             --domain atomiklabs-${{ vars.ENVIRONMENT }} \
             --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
-            --region ${{ vars.AWS_REGION }} \
             --query authorizationToken --output text)
           
           # Add --skip-existing for production versions to avoid failures
@@ -298,16 +283,19 @@ jobs:
             --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
             --query authorizationToken --output text)
           
-          # Create pip.conf for each service
+          # Create pip.conf for each service with both CodeArtifact and PyPI
           for SERVICE in newsletter_processor arxiv_processor nvd_checker; do
             echo "[global]" > ./services/$SERVICE/pip.conf
             echo "index-url=https://aws:${CODEARTIFACT_AUTH_TOKEN}@atomiklabs-${{ vars.ENVIRONMENT }}-${{ vars.AWS_ACCOUNT_NUM }}.d.codeartifact.${{ vars.AWS_REGION }}.amazonaws.com/pypi/neo4j-client/simple/" >> ./services/$SERVICE/pip.conf
+            echo "extra-index-url=https://pypi.org/simple/" >> ./services/$SERVICE/pip.conf
             echo "trusted-host=atomiklabs-${{ vars.ENVIRONMENT }}-${{ vars.AWS_ACCOUNT_NUM }}.d.codeartifact.${{ vars.AWS_REGION }}.amazonaws.com" >> ./services/$SERVICE/pip.conf
+            echo "trusted-host=pypi.org" >> ./services/$SERVICE/pip.conf
           done
           
           # Verify pip.conf files were created
           echo "Verifying pip.conf files:"
           ls -la ./services/*/pip.conf
+          cat ./services/arxiv_processor/pip.conf
 
       - name: Build and push Newsletter processor
         working-directory: ./services/newsletter_processor
