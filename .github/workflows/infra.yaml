@@ -147,6 +147,17 @@ jobs:
             echo "index-url=https://pypi.org/simple/" >> ./services/$SERVICE/pip.conf
             echo "trusted-host=pypi.org" >> ./services/$SERVICE/pip.conf
           done
+          
+      - name: Copy Neo4j client requirements
+        run: |
+          # Copy Neo4j client requirements to the arxiv_processor service
+          cp packages/atomiklabs-neo4j-client/requirements.txt services/arxiv_processor/neo4j-requirements.txt
+          
+          # Create atomiklabs namespace directory structure in arxiv_processor
+          mkdir -p services/arxiv_processor/src/atomiklabs/neo4j
+          
+          # Copy Neo4j client code to the arxiv_processor service
+          cp -r packages/atomiklabs-neo4j-client/src/atomiklabs/neo4j/* services/arxiv_processor/src/atomiklabs/neo4j/
 
       - name: Build and push Newsletter processor
         working-directory: ./services/newsletter_processor
