@@ -97,132 +97,8 @@ jobs:
           cd infra
           terraform apply -auto-approve
 
-  publish-neo4j-client:
-    needs: terraform
-    runs-on: ubuntu-latest
-    environment: dev
-    outputs:
-      package-version: ${{ steps.set-version.outputs.version }}
-    
-    steps:
-      - name: Git clone the repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4.1.0
-        with:
-          role-to-assume: ${{ secrets.AWS_CI_CD_ROLE }}
-          role-session-name: GitHub_to_AWS_via_FederatedOIDC
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Check for changes in Neo4j client
-        id: check-changes
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "Running in PR context - will build and publish dev version"
-            echo "changes=true" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/dev" ]]; then
-            if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -q "packages/atomiklabs-neo4j-client/"; then
-              echo "Changes detected in Neo4j client package"
-              echo "changes=true" >> $GITHUB_OUTPUT
-            else
-              echo "No changes detected in Neo4j client package"
-              echo "changes=false" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "Not a PR or push to dev - not publishing"
-            echo "changes=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Set version number
-        if: steps.check-changes.outputs.changes == 'true'
-        id: set-version
-        working-directory: ./packages/atomiklabs-neo4j-client
-        run: |
-          VERSION="0.1.0"
-          
-          # For PR builds, add dev suffix with run number
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            VERSION="${VERSION}.dev${{ github.run_number }}"
-          fi
-          
-          echo "Setting version to $VERSION"
-          
-          # Update version in setup.py
-          sed -i "s/version=\"[0-9]*\.[0-9]*\.[0-9]*.*\"/version=\"$VERSION\"/" setup.py
-          
-          # Verify version is set
-          grep "version" setup.py
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Install build dependencies
-        if: steps.check-changes.outputs.changes == 'true'
-        run: |
-          python -m pip install --upgrade pip
-          pip install build twine setuptools wheel
-
-      - name: Build package
-        if: steps.check-changes.outputs.changes == 'true'
-        working-directory: ./packages/atomiklabs-neo4j-client
-        run: |
-          python -m build
-          echo "Package contents:"
-          ls -la dist/
-
-      - name: Publish package to GitHub Packages
-        if: steps.check-changes.outputs.changes == 'true'
-        working-directory: ./packages/atomiklabs-neo4j-client
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Configure GitHub Packages with the GitHub Token
-          echo "[distutils]" > ~/.pypirc
-          echo "index-servers = github" >> ~/.pypirc
-          echo "[github]" >> ~/.pypirc
-          echo "repository = https://upload.pkg.github.com/${{ github.repository }}" >> ~/.pypirc
-          echo "username = ${{ github.actor }}" >> ~/.pypirc
-          echo "password = ${{ secrets.GITHUB_TOKEN }}" >> ~/.pypirc
-          
-          # Add --skip-existing for production versions to avoid failures
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            python -m twine upload --repository github --skip-existing dist/*
-          else
-            python -m twine upload --repository github dist/*
-          fi
-          
-          echo "Published version ${{ steps.set-version.outputs.version }} to GitHub Packages"
-
-      - name: Update service requirements for PR builds
-        if: github.event_name == 'pull_request' && steps.check-changes.outputs.changes == 'true'
-        run: |
-          VERSION="${{ steps.set-version.outputs.version }}"
-          echo "Updating service requirements to use version $VERSION"
-          
-          # Update each service's requirements.txt
-          for SERVICE in arxiv_processor newsletter_processor nvd_checker; do
-            if [ -f "services/$SERVICE/requirements.txt" ]; then
-              echo "Updating services/$SERVICE/requirements.txt"
-              # Replace version if already exists, otherwise add it
-              if grep -q "atomiklabs-neo4j-client==" services/$SERVICE/requirements.txt; then
-                sed -i "s/atomiklabs-neo4j-client==.*/atomiklabs-neo4j-client==$VERSION/" services/$SERVICE/requirements.txt
-              else
-                echo "atomiklabs-neo4j-client==$VERSION" >> services/$SERVICE/requirements.txt
-              fi
-              cat services/$SERVICE/requirements.txt | grep atomiklabs-neo4j-client
-            else
-              echo "File services/$SERVICE/requirements.txt not found"
-            fi
-          done
-
   build-and-push:
-    needs: publish-neo4j-client
+    needs: terraform
     runs-on: ubuntu-latest
     environment: dev
     
@@ -263,7 +139,7 @@ jobs:
         run: |
           aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin 920372995176.dkr.ecr.us-east-1.amazonaws.com
 
-      - name: Create pip.conf files for PyPI and GitHub install file for arxiv_processor
+      - name: Create pip.conf files for PyPI
         run: |
           # Create pip.conf for each service to use PyPI
           for SERVICE in newsletter_processor arxiv_processor nvd_checker; do
@@ -271,16 +147,6 @@ jobs:
             echo "index-url=https://pypi.org/simple/" >> ./services/$SERVICE/pip.conf
             echo "trusted-host=pypi.org" >> ./services/$SERVICE/pip.conf
           done
-          
-          # Only the arxiv_processor needs the neo4j client
-          # Create a GitHub packages install file for it
-          VERSION="${{ needs.publish-neo4j-client.outputs.package-version }}"
-          if [ -n "$VERSION" ]; then
-            echo "Creating GitHub install file for neo4j client in arxiv_processor"
-            echo "# Install atomiklabs-neo4j-client directly from GitHub" > ./services/arxiv_processor/github_packages.txt
-            echo "git+https://github.com/${{ github.repository }}.git@main#egg=atomiklabs-neo4j-client&subdirectory=packages/atomiklabs-neo4j-client" >> ./services/arxiv_processor/github_packages.txt
-            cat ./services/arxiv_processor/github_packages.txt
-          fi
 
       - name: Build and push Newsletter processor
         working-directory: ./services/newsletter_processor
