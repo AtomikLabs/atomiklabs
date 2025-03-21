@@ -95,24 +95,23 @@ jobs:
         run: |
           echo "Configuring CodeArtifact repositories..."
           
-          # Set proper upstream mode for both repositories
-          echo "Setting repository upstream modes..."
-          
-          # Configure Python-Public repository to allow upstream from PyPI
+          # Configure Python-Public repository to connect to PyPI
+          echo "Configuring Python Public repository..."
           aws codeartifact update-repository \
             --domain atomiklabs-${{ vars.ENVIRONMENT }} \
             --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
             --repository python-public \
-            --upstreams-mode ALLOW
-          
-          # Configure Neo4j client repository to allow upstream from Python-Public
+            --external-connections public:pypi
+
+          # Configure Neo4j client repository to use python-public as upstream
+          echo "Configuring Neo4j client repository..."
           aws codeartifact update-repository \
             --domain atomiklabs-${{ vars.ENVIRONMENT }} \
             --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
             --repository neo4j-client \
-            --upstreams-mode ALLOW
+            --upstreams repositoryName=python-public
           
-          # Ensure proper origin controls for common packages
+          # Ensure proper origin controls for critical packages
           echo "Setting package origin controls..."
           
           # Critical packages that should come from upstream
@@ -126,7 +125,7 @@ jobs:
               --repository neo4j-client \
               --format pypi \
               --package "$PKG" \
-              --restrictions "upstream=ALLOW"
+              --restrictions upstream=ALLOW
               
             # Verify configuration was applied
             aws codeartifact get-package-origin-configuration \
