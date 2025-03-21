@@ -9,7 +9,6 @@ from io import BytesIO
 
 import boto3
 import defusedxml.ElementTree as ET
-import docx
 import requests
 from docx import Document
 from botocore.exceptions import ClientError
@@ -157,7 +156,6 @@ def put_paper_node(record: dict, neo4j_client: Neo4jClient) -> bool:
         True if successful, False otherwise
     """
     try:
-        # Create the complete paper graph in Neo4j
         paper = neo4j_client.create_arxiv_paper_graph(record)
         logger.info(f"Created/updated Neo4j graph for paper {record['identifier']}")
         return True
@@ -204,15 +202,12 @@ def store_paper_metadata(record: dict, dynamodb_table, neo4j_client: Neo4jClient
         
         neo4j_status = "pending"
         
-        # Check if we should update Neo4j
         if neo4j_client:
             neo4j_exists = check_existing_node(record, neo4j_client)
             
             if neo4j_exists:
-                # If it exists in Neo4j, we'll update it
                 logger.debug(f"Paper {record['identifier']} exists in Neo4j, will update")
             
-            # Try to put/update the paper in Neo4j
             neo4j_success = put_paper_node(record, neo4j_client)
             
             if neo4j_success:
@@ -242,7 +237,6 @@ def store_paper_metadata(record: dict, dynamodb_table, neo4j_client: Neo4jClient
                 item["neo4j_status"] = neo4j_status
                 logger.info(f"Paper updated: {record['identifier']}")
             else:
-                # Keep existing status if nothing changed and we didn't update Neo4j
                 if neo4j_client:
                     item["neo4j_status"] = neo4j_status
                 else:
@@ -491,7 +485,6 @@ def main():
     s3_client = boto3.client('s3')
     dynamodb_client = boto3.resource('dynamodb').Table(config["dynamodb_table"])
     
-    # Initialize Neo4j client if configuration is available
     neo4j_client = None
     try:
         if all(key in config for key in ["uri", "username", "password"]):
@@ -501,7 +494,6 @@ def main():
                 password=config["password"],
                 database=config.get("database", "neo4j")
             )
-            # Verify Neo4j connection and schema
             schema_status = neo4j_client.verify_schema()
             logger.info(f"Neo4j schema status: {schema_status}")
             if not all(schema_status["constraints"].values()) or not all(schema_status["indexes"].values()):
@@ -546,7 +538,6 @@ def main():
                 else:
                     logging.warning(f"No records found for {set_name}/{date}")
     finally:
-        # Close Neo4j connection
         if neo4j_client:
             neo4j_client.close()
             logger.info("Neo4j connection closed")
