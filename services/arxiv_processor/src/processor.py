@@ -87,8 +87,16 @@ DYNAMODB_TABLE = config['dynamodb_table']
 s3 = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb').Table(DYNAMODB_TABLE)
 
-def check_existing_metadata(record: dict, dynamodb_table) -> bool:
-    """Check if paper already exists in DynamoDB"""
+def check_existing_metadata(record: dict, dynamodb_table):
+    """Check if paper already exists in DynamoDB and return the item if found
+    
+    Args:
+        record: Paper record dictionary
+        dynamodb_table: DynamoDB table instance
+        
+    Returns:
+        The DynamoDB item if found, None otherwise
+    """
     existing_item = dynamodb_table.get_item(
             Key={
                 "id": record["identifier"],
@@ -96,12 +104,18 @@ def check_existing_metadata(record: dict, dynamodb_table) -> bool:
             }
         ).get("Item")
     
-    return existing_item is not None
+    return existing_item
 
-def put_paper_metadata(item: dict, dynamodb_table, existing_item: bool):
-    """Put paper metadata in DynamoDB"""
+def put_paper_metadata(item: dict, dynamodb_table, existing_item_exists: bool):
+    """Put paper metadata in DynamoDB
+    
+    Args:
+        item: Item to put in DynamoDB
+        dynamodb_table: DynamoDB table instance
+        existing_item_exists: Whether the item already exists in DynamoDB
+    """
     try:
-        if existing_item:
+        if existing_item_exists:
             dynamodb_table.put_item(
                 Item=item,
                 ConditionExpression="attribute_exists(id) AND attribute_exists(#date)",
@@ -243,7 +257,7 @@ def store_paper_metadata(record: dict, dynamodb_table, neo4j_client: Neo4jClient
                     item["neo4j_status"] = existing_item.get("neo4j_status", "pending")
                 logger.debug(f"Paper unchanged: {record['identifier']}")
 
-        put_paper_metadata(item, dynamodb_table, existing_item)
+        put_paper_metadata(item, dynamodb_table, existing_item is not None)
             
     except ClientError as e:
         if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
