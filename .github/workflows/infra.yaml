@@ -90,6 +90,54 @@ jobs:
           TF_VAR_neo4j_password: ${{ secrets.NEO4J_PASSWORD }}
         run: |
           terraform apply -auto-approve tfplan
+      
+      - name: Configure CodeArtifact properly
+        run: |
+          echo "Configuring CodeArtifact repositories..."
+          
+          # Set proper upstream mode for both repositories
+          echo "Setting repository upstream modes..."
+          
+          # Configure Python-Public repository to allow upstream from PyPI
+          aws codeartifact update-repository \
+            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
+            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+            --repository python-public \
+            --upstreams-mode ALLOW
+          
+          # Configure Neo4j client repository to allow upstream from Python-Public
+          aws codeartifact update-repository \
+            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
+            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+            --repository neo4j-client \
+            --upstreams-mode ALLOW
+          
+          # Ensure proper origin controls for common packages
+          echo "Setting package origin controls..."
+          
+          # Critical packages that should come from upstream
+          PACKAGES=("neo4j" "python-dotenv")
+          
+          for PKG in "${PACKAGES[@]}"; do
+            echo "Setting origin controls for $PKG..."
+            aws codeartifact update-package-origin-configuration \
+              --domain atomiklabs-${{ vars.ENVIRONMENT }} \
+              --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+              --repository neo4j-client \
+              --format pypi \
+              --package "$PKG" \
+              --restrictions "upstream=ALLOW"
+              
+            # Verify configuration was applied
+            aws codeartifact get-package-origin-configuration \
+              --domain atomiklabs-${{ vars.ENVIRONMENT }} \
+              --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+              --repository neo4j-client \
+              --format pypi \
+              --package "$PKG" || echo "Package $PKG not found yet, will be configured when first used"
+          done
+          
+          echo "CodeArtifact configuration completed"
 
       - name: Apply Terraform
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -98,42 +146,9 @@ jobs:
           terraform apply -auto-approve
           
       - name: Configure CodeArtifact upstream dependencies
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: false  # Disable this step as it's now done properly during initial setup
         run: |
-          echo "Configuring CodeArtifact to allow upstream dependencies..."
-          
-          # Configure Python Public repository to fetch from PyPI
-          aws codeartifact update-repository \
-            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
-            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
-            --repository python-public \
-            --upstreams-mode ALLOW
-
-          # Configure Neo4J Client repository to fetch from Python Public
-          aws codeartifact update-repository \
-            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
-            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
-            --repository neo4j-client \
-            --upstreams-mode ALLOW
-          
-          # Configure package-specific origin controls for neo4j to allow upstream
-          aws codeartifact update-package-origin-configuration \
-            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
-            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
-            --repository neo4j-client \
-            --format pypi \
-            --package neo4j \
-            --restrictions upstream=ALLOW
-          
-          # Verify the package origin controls for neo4j
-          aws codeartifact get-package-origin-configuration \
-            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
-            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
-            --repository neo4j-client \
-            --format pypi \
-            --package neo4j
-            
-          echo "CodeArtifact upstream dependencies configured"
+          echo "This step is now disabled as the CodeArtifact configuration is done properly during initial setup"
 
   publish-neo4j-client:
     needs: terraform

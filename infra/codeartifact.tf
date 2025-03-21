@@ -4,22 +4,11 @@ resource "aws_codeartifact_domain" "domain" {
   tags = local.common_tags
 }
 
-resource "aws_codeartifact_repository" "neo4j_client" {
-  repository  = "neo4j-client"
-  domain      = aws_codeartifact_domain.domain.domain
-  description = "Private repository for atomiklabs Neo4j client"
-
-  upstream {
-    repository_name = aws_codeartifact_repository.python_public.repository
-  }
-
-  tags = local.common_tags
-}
-
+# Configure the public PyPI mirror with access to external PyPI repos
 resource "aws_codeartifact_repository" "python_public" {
   repository  = "python-public"
   domain      = aws_codeartifact_domain.domain.domain
-  description = "Public PyPI mirror"
+  description = "Public PyPI mirror with external connections"
   
   external_connections {
     external_connection_name = "public:pypi"
@@ -28,7 +17,7 @@ resource "aws_codeartifact_repository" "python_public" {
   tags = local.common_tags
 }
 
-# Add a specific permissions policy that explicitly allows fetching from external repositories
+# Configure proper permissions for Python Public repository to access PyPI
 resource "aws_codeartifact_repository_permissions_policy" "python_public_policy" {
   domain       = aws_codeartifact_domain.domain.domain
   repository   = aws_codeartifact_repository.python_public.repository
@@ -39,9 +28,13 @@ resource "aws_codeartifact_repository_permissions_policy" "python_public_policy"
         Effect = "Allow"
         Action = [
           "codeartifact:ReadFromRepository",
-          "codeartifact:PublishPackageVersion",
+          "codeartifact:PublishPackageVersion", 
           "codeartifact:GetPackageVersionAsset",
-          "codeartifact:GetPackageVersionReadme"
+          "codeartifact:GetPackageVersionReadme",
+          "codeartifact:ListPackageVersionAssets",
+          "codeartifact:ListPackageVersions",
+          "codeartifact:DescribePackageVersion",
+          "codeartifact:GetPackageVersionDependencies"
         ]
         Principal = "*"
         Resource  = "*"
@@ -50,6 +43,21 @@ resource "aws_codeartifact_repository_permissions_policy" "python_public_policy"
   })
 }
 
+# Configure our private Neo4j client repository with upstream access
+resource "aws_codeartifact_repository" "neo4j_client" {
+  repository  = "neo4j-client"
+  domain      = aws_codeartifact_domain.domain.domain
+  description = "Private repository for atomiklabs Neo4j client"
+
+  # Connect to public PyPI repository as upstream
+  upstream {
+    repository_name = aws_codeartifact_repository.python_public.repository
+  }
+
+  tags = local.common_tags
+}
+
+# Configure proper permissions for Neo4j client repository
 resource "aws_codeartifact_repository_permissions_policy" "neo4j_client_policy" {
   domain      = aws_codeartifact_domain.domain.domain
   repository  = aws_codeartifact_repository.neo4j_client.repository
@@ -61,7 +69,11 @@ resource "aws_codeartifact_repository_permissions_policy" "neo4j_client_policy" 
           "codeartifact:ReadFromRepository",
           "codeartifact:PublishPackageVersion",
           "codeartifact:GetPackageVersionAsset",
-          "codeartifact:GetPackageVersionReadme"
+          "codeartifact:GetPackageVersionReadme",
+          "codeartifact:ListPackageVersionAssets",
+          "codeartifact:ListPackageVersions",
+          "codeartifact:DescribePackageVersion",
+          "codeartifact:GetPackageVersionDependencies"
         ]
         Effect   = "Allow"
         Principal = "*"
