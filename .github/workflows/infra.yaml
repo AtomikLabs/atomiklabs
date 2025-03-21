@@ -91,6 +91,30 @@ jobs:
         run: |
           terraform apply -auto-approve tfplan
 
+      - name: Apply Terraform
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          cd infra
+          terraform apply -auto-approve
+          
+      - name: Configure CodeArtifact upstream dependencies
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          # Configure repositories to allow upstream dependencies
+          aws codeartifact update-repository \
+            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
+            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+            --repository python-public \
+            --upstreams-mode ALLOW
+
+          aws codeartifact update-repository \
+            --domain atomiklabs-${{ vars.ENVIRONMENT }} \
+            --domain-owner ${{ vars.AWS_ACCOUNT_NUM }} \
+            --repository neo4j-client \
+            --upstreams-mode ALLOW
+            
+          echo "CodeArtifact upstream dependencies configured"
+
   publish-neo4j-client:
     needs: terraform
     runs-on: ubuntu-latest

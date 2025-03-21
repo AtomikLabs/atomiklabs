@@ -16,15 +16,6 @@ resource "aws_codeartifact_repository" "neo4j_client" {
   tags = local.common_tags
 }
 
-# Update neo4j client repository upstream configuration
-resource "aws_codeartifact_repository_upstream_configuration" "allow_upstream_deps" {
-  repository      = aws_codeartifact_repository.neo4j_client.repository
-  domain          = aws_codeartifact_domain.domain.domain
-  upstream_configuration {
-    allow_upstream_dependencies = true
-  }
-}
-
 resource "aws_codeartifact_repository" "python_public" {
   repository  = "python-public"
   domain      = aws_codeartifact_domain.domain.domain
@@ -37,6 +28,28 @@ resource "aws_codeartifact_repository" "python_public" {
   tags = local.common_tags
 }
 
+# Add a specific permissions policy that explicitly allows fetching from external repositories
+resource "aws_codeartifact_repository_permissions_policy" "python_public_policy" {
+  domain       = aws_codeartifact_domain.domain.domain
+  repository   = aws_codeartifact_repository.python_public.repository
+  policy_document = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "codeartifact:ReadFromRepository",
+          "codeartifact:PublishPackageVersion",
+          "codeartifact:GetPackageVersionAsset",
+          "codeartifact:GetPackageVersionReadme"
+        ]
+        Principal = "*"
+        Resource  = "*"
+      }
+    ]
+  })
+}
+
 resource "aws_codeartifact_repository_permissions_policy" "neo4j_client_policy" {
   domain      = aws_codeartifact_domain.domain.domain
   repository  = aws_codeartifact_repository.neo4j_client.repository
@@ -44,7 +57,12 @@ resource "aws_codeartifact_repository_permissions_policy" "neo4j_client_policy" 
     Version = "2012-10-17"
     Statement = [
       {
-        Action   = ["codeartifact:ReadFromRepository"]
+        Action   = [
+          "codeartifact:ReadFromRepository",
+          "codeartifact:PublishPackageVersion",
+          "codeartifact:GetPackageVersionAsset",
+          "codeartifact:GetPackageVersionReadme"
+        ]
         Effect   = "Allow"
         Principal = "*"
         Resource = "*"
