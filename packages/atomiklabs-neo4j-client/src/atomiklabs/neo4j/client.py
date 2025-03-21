@@ -1,4 +1,4 @@
-"""Neo4j client for interacting with Neo4j graph database."""
+"""Neo4j client for interacting with Neo4j graph database in atomiklabs."""
 
 from typing import Optional, List, Dict, Any, TypeVar, cast
 from types import TracebackType
