@@ -125,7 +125,7 @@ jobs:
               --repository neo4j-client \
               --format pypi \
               --package "$PKG" \
-              --restrictions upstream=ALLOW
+              --restrictions "publish=BLOCK,upstream=ALLOW"
               
             # Verify configuration was applied
             aws codeartifact get-package-origin-configuration \
