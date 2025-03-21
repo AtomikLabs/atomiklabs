@@ -96,7 +96,88 @@ fi
 # Get Neo4j password from SSM
 NEO4J_PASSWORD=$(aws ssm get-parameter --name "/${var.project}/${var.environment}/neo4j/password" --with-decryption --query "Parameter.Value" --output text --region ${var.region})
 
-# Run Neo4j container
+# Create Neo4j startup script
+cat > /usr/local/bin/start-neo4j.sh << 'SCRIPT'
+#!/bin/bash
+set -e
+
+# Get Neo4j password from SSM
+NEO4J_PASSWORD=$(aws ssm get-parameter --name "/${var.project}/${var.environment}/neo4j/password" --with-decryption --query "Parameter.Value" --output text --region ${var.region})
+
+# Wait for docker to be running
+while ! systemctl is-active docker; do
+  echo "Waiting for Docker to start..."
+  sleep 5
+done
+
+# Check if neo4j container exists
+if docker ps -a --format '{{.Names}}' | grep -q '^neo4j$'; then
+  # Check if neo4j container is running
+  if ! docker ps --format '{{.Names}}' | grep -q '^neo4j$'; then
+    echo "Neo4j container exists but is not running. Starting..."
+    docker start neo4j
+  else
+    echo "Neo4j container is already running."
+  fi
+else
+  echo "Neo4j container does not exist. Creating and starting..."
+  docker run -d \
+    --name neo4j \
+    --restart=always \
+    -p 7474:7474 \
+    -p 7687:7687 \
+    -v /data/neo4j/data:/data \
+    -v /data/neo4j/logs:/logs \
+    -v /data/neo4j/import:/import \
+    -v /data/neo4j/plugins:/plugins \
+    -e 'NEO4J_AUTH=neo4j/'"$NEO4J_PASSWORD"'' \
+    neo4j:latest
+fi
+
+# Verify neo4j is running properly
+MAX_ATTEMPTS=10
+ATTEMPT=0
+while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+  if docker ps --format '{{.Names}}' | grep -q '^neo4j$'; then
+    echo "Neo4j container is running."
+    exit 0
+  fi
+  echo "Waiting for Neo4j container to start... ($ATTEMPT/$MAX_ATTEMPTS)"
+  ATTEMPT=$((ATTEMPT+1))
+  sleep 5
+done
+
+echo "Failed to start Neo4j container after $MAX_ATTEMPTS attempts."
+exit 1
+SCRIPT
+
+chmod +x /usr/local/bin/start-neo4j.sh
+
+# Create systemd service for Neo4j
+cat > /etc/systemd/system/neo4j-docker.service << 'SERVICE'
+[Unit]
+Description=Neo4j Docker Container
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/start-neo4j.sh
+# In case it stops, restart in 10 seconds
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+# Enable and start the neo4j service
+systemctl daemon-reload
+systemctl enable neo4j-docker.service
+systemctl start neo4j-docker.service
+
+# Run Neo4j container for the first time
 docker run -d \
   --name neo4j \
   --restart=always \
