@@ -14,8 +14,11 @@ COPY requirements.txt .
 # Use a pre-configured pip.conf with repository URL and token
 COPY pip.conf /etc/pip.conf
 
+# Verify pip.conf content
+RUN cat /etc/pip.conf
+
 # Install packages with dependencies
-RUN pip install --no-cache-dir -r requirements.txt && \
+RUN pip install --no-cache-dir --verbose -r requirements.txt && \
     # Verify all packages are installed
     pip list | grep neo4j && \
     pip list | grep atomiklabs-neo4j-client

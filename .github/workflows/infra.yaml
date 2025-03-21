@@ -288,8 +288,7 @@ jobs:
             echo "[global]" > ./services/$SERVICE/pip.conf
             echo "index-url=https://aws:${CODEARTIFACT_AUTH_TOKEN}@atomiklabs-${{ vars.ENVIRONMENT }}-${{ vars.AWS_ACCOUNT_NUM }}.d.codeartifact.${{ vars.AWS_REGION }}.amazonaws.com/pypi/neo4j-client/simple/" >> ./services/$SERVICE/pip.conf
             echo "extra-index-url=https://pypi.org/simple/" >> ./services/$SERVICE/pip.conf
-            echo "trusted-host=atomiklabs-${{ vars.ENVIRONMENT }}-${{ vars.AWS_ACCOUNT_NUM }}.d.codeartifact.${{ vars.AWS_REGION }}.amazonaws.com" >> ./services/$SERVICE/pip.conf
-            echo "trusted-host=pypi.org" >> ./services/$SERVICE/pip.conf
+            echo "trusted-host=atomiklabs-${{ vars.ENVIRONMENT }}-${{ vars.AWS_ACCOUNT_NUM }}.d.codeartifact.${{ vars.AWS_REGION }}.amazonaws.com pypi.org" >> ./services/$SERVICE/pip.conf
           done
           
           # Verify pip.conf files were created
