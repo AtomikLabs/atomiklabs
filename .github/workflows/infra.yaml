@@ -69,6 +69,7 @@ jobs:
           TF_VAR_nvd_api_key: ${{ secrets.NVD_API_KEY }}
           TF_VAR_monitored_systems: ${{ vars.MONITORED_SYSTEMS }}
           TF_VAR_laptop_pub_key: ${{ secrets.LAPTOP_PUB_KEY }}
+          TF_VAR_laptop_private_key: ${{ secrets.LAPTOP_PRIVATE_KEY }}
           TF_VAR_neo4j_password: ${{ secrets.NEO4J_PASSWORD }}
           TF_LOG: DEBUG
         run: |
@@ -87,6 +88,7 @@ jobs:
           TF_VAR_nvd_api_key: ${{ secrets.NVD_API_KEY }}
           TF_VAR_monitored_systems: ${{ vars.MONITORED_SYSTEMS }}
           TF_VAR_laptop_pub_key: ${{ secrets.LAPTOP_PUB_KEY }}
+          TF_VAR_laptop_private_key: ${{ secrets.LAPTOP_PRIVATE_KEY }}
           TF_VAR_neo4j_password: ${{ secrets.NEO4J_PASSWORD }}
         run: |
           terraform apply -auto-approve tfplan

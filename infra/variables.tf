@@ -81,3 +81,9 @@ variable "neo4j_password" {
   sensitive   = true
   default     = "neo4j"
 }
+
+variable "laptop_private_key" {
+  description = "Private SSH key for provisioner connection"
+  type        = string
+  sensitive   = true
+}

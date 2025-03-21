@@ -95,142 +95,28 @@ resource "aws_instance" "neo4j" {
     encrypted   = true
   }
 
-  user_data = <<-EOF
-#!/bin/bash
-set -e
-
-# Update system
-yum update -y
-yum install -y amazon-cloudwatch-agent
-
-# Install Docker
-amazon-linux-extras install docker -y
-systemctl enable docker
-systemctl start docker
-usermod -a -G docker ec2-user
-
-# Set up EBS volume
-DEVICE_NAME="/dev/sdf"
-MOUNT_POINT="/data/neo4j"
-
-# Check if the device exists
-if [ -e $DEVICE_NAME ]; then
-  # Check if the device is already formatted
-  if ! blkid $DEVICE_NAME; then
-    # Format the volume if not already formatted
-    mkfs -t ext4 $DEVICE_NAME
-  fi
-
-  # Create mount point directory
-  mkdir -p $MOUNT_POINT
-
-  # Add entry to fstab to mount on boot
-  if ! grep -q $DEVICE_NAME /etc/fstab; then
-    echo "$DEVICE_NAME $MOUNT_POINT ext4 defaults,nofail 0 2" >> /etc/fstab
-  fi
-
-  # Mount the volume
-  mount $MOUNT_POINT || mount -a
+  connection {
+    type        = "ssh"
+    user        = "ec2-user"
+    host        = self.public_ip
+    private_key = var.laptop_private_key
+  }
   
-  # Set permissions
-  mkdir -p $MOUNT_POINT/data
-  mkdir -p $MOUNT_POINT/logs
-  mkdir -p $MOUNT_POINT/import
-  mkdir -p $MOUNT_POINT/plugins
-  chown -R 7474:7474 $MOUNT_POINT || true
-  chmod -R 755 $MOUNT_POINT
-fi
-
-# Create startup script without variable substitution
-cat > /usr/local/bin/start-neo4j.sh << EOF_SCRIPT
-#!/bin/bash
-set -e
-
-# Wait for docker to be running
-while ! systemctl is-active docker; do
-  echo "Waiting for Docker to start..."
-  sleep 5
-done
-
-# Get Neo4j password - fail if not available
-echo "Retrieving Neo4j password from SSM Parameter Store..."
-PASSWORD_ARG="/${var.project}/${var.environment}/neo4j/password"
-NEO4J_PASSWORD=\$(aws ssm get-parameter --name "\$PASSWORD_ARG" --with-decryption --query "Parameter.Value" --output text --region ${var.region})
-
-if [ -z "\$NEO4J_PASSWORD" ]; then
-  echo "ERROR: Failed to retrieve Neo4j password from SSM Parameter Store"
-  exit 1
-fi
-
-# Check if neo4j container exists
-if docker ps -a --format '{{.Names}}' | grep -q '^neo4j\$'; then
-  # Check if neo4j container is running
-  if ! docker ps --format '{{.Names}}' | grep -q '^neo4j\$'; then
-    echo "Neo4j container exists but is not running. Starting..."
-    docker start neo4j
-  else
-    echo "Neo4j container is already running."
-  fi
-else
-  echo "Neo4j container does not exist. Creating and starting..."
-  # Create and start container
-  docker run -d \\
-    --name neo4j \\
-    --restart=always \\
-    -p 7474:7474 \\
-    -p 7687:7687 \\
-    -v /data/neo4j/data:/data \\
-    -v /data/neo4j/logs:/logs \\
-    -v /data/neo4j/import:/import \\
-    -v /data/neo4j/plugins:/plugins \\
-    -e "NEO4J_AUTH=neo4j/\$NEO4J_PASSWORD" \\
-    neo4j:latest
-fi
-
-# Verify neo4j is running properly
-MAX_ATTEMPTS=10
-ATTEMPT=0
-while [ \$ATTEMPT -lt \$MAX_ATTEMPTS ]; do
-  if docker ps --format '{{.Names}}' | grep -q '^neo4j\$'; then
-    echo "Neo4j container is running."
-    exit 0
-  fi
-  echo "Waiting for Neo4j container to start... (\$ATTEMPT/\$MAX_ATTEMPTS)"
-  ATTEMPT=\$((ATTEMPT+1))
-  sleep 5
-done
-
-echo "Failed to start Neo4j container after \$MAX_ATTEMPTS attempts."
-exit 1
-EOF_SCRIPT
-
-chmod +x /usr/local/bin/start-neo4j.sh
-
-# Create systemd service with proper dependencies
-cat > /etc/systemd/system/neo4j-docker.service << 'EOF_SERVICE'
-[Unit]
-Description=Neo4j Docker Container
-After=docker.service cloud-final.service network-online.target
-Wants=docker.service cloud-final.service network-online.target
-Requires=docker.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/usr/local/bin/start-neo4j.sh
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target cloud-init.target
-EOF_SERVICE
-
-# Set it to start on boot, but don't start it immediately
-systemctl daemon-reload
-systemctl enable neo4j-docker.service
-
-echo "Neo4j setup complete!"
-EOF
+  provisioner "file" {
+    content = templatefile("${path.module}/templates/neo4j-service.sh.tpl", {
+      project     = var.project
+      environment = var.environment
+      region      = var.region
+    })
+    destination = "/tmp/neo4j-service.sh"
+  }
+  
+  provisioner "remote-exec" {
+    inline = [
+      "chmod +x /tmp/neo4j-service.sh",
+      "sudo /tmp/neo4j-service.sh"
+    ]
+  }
 
   tags = merge(
     local.common_tags,
