@@ -31,6 +31,53 @@ resource "aws_ebs_volume" "neo4j_data" {
   }
 }
 
+resource "aws_iam_role" "neo4j_instance_role" {
+  name = "${local.resource_prefix}-neo4j-role-${substr(local.resource_suffix, 0, 8)}"
+  
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+  
+  tags = local.common_tags
+}
+
+resource "aws_iam_role_policy" "neo4j_ssm_access" {
+  name = "${local.resource_prefix}-neo4j-ssm-policy-${substr(local.resource_suffix, 0, 8)}"
+  role = aws_iam_role.neo4j_instance_role.id
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        Effect = "Allow"
+        Resource = [
+          "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/${var.environment}/neo4j/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_instance_profile" "neo4j_instance_profile" {
+  name = "${local.resource_prefix}-neo4j-profile-${substr(local.resource_suffix, 0, 8)}"
+  role = aws_iam_role.neo4j_instance_role.name
+  
+  tags = local.common_tags
+}
+
 resource "aws_instance" "neo4j" {
   ami                    = data.aws_ami.amazon_linux_2.id
   instance_type          = "t3.medium"
@@ -38,6 +85,7 @@ resource "aws_instance" "neo4j" {
   subnet_id              = [for s in tolist(data.aws_subnets.default.ids) : s if data.aws_subnet.selected[s].availability_zone == "${var.region}a"][0]
   vpc_security_group_ids = [aws_security_group.neo4j.id]
   key_name               = aws_key_pair.neo4j_ssh.key_name
+  iam_instance_profile   = aws_iam_instance_profile.neo4j_instance_profile.name
   
   count = 1
 
@@ -89,20 +137,14 @@ if [ -e $DEVICE_NAME ]; then
   mkdir -p $MOUNT_POINT/logs
   mkdir -p $MOUNT_POINT/import
   mkdir -p $MOUNT_POINT/plugins
-  chown -R 7474:7474 $MOUNT_POINT
+  chown -R 7474:7474 $MOUNT_POINT || true
   chmod -R 755 $MOUNT_POINT
 fi
 
-# Get Neo4j password from SSM
-NEO4J_PASSWORD=$(aws ssm get-parameter --name "/${var.project}/${var.environment}/neo4j/password" --with-decryption --query "Parameter.Value" --output text --region ${var.region})
-
-# Create Neo4j startup script
-cat > /usr/local/bin/start-neo4j.sh << 'SCRIPT'
+# Create startup script without variable substitution
+cat > /usr/local/bin/start-neo4j.sh << EOF_SCRIPT
 #!/bin/bash
 set -e
-
-# Get Neo4j password from SSM
-NEO4J_PASSWORD=$(aws ssm get-parameter --name "/${var.project}/${var.environment}/neo4j/password" --with-decryption --query "Parameter.Value" --output text --region ${var.region})
 
 # Wait for docker to be running
 while ! systemctl is-active docker; do
@@ -110,10 +152,20 @@ while ! systemctl is-active docker; do
   sleep 5
 done
 
+# Get Neo4j password - fail if not available
+echo "Retrieving Neo4j password from SSM Parameter Store..."
+PASSWORD_ARG="/${var.project}/${var.environment}/neo4j/password"
+NEO4J_PASSWORD=\$(aws ssm get-parameter --name "\$PASSWORD_ARG" --with-decryption --query "Parameter.Value" --output text --region ${var.region})
+
+if [ -z "\$NEO4J_PASSWORD" ]; then
+  echo "ERROR: Failed to retrieve Neo4j password from SSM Parameter Store"
+  exit 1
+fi
+
 # Check if neo4j container exists
-if docker ps -a --format '{{.Names}}' | grep -q '^neo4j$'; then
+if docker ps -a --format '{{.Names}}' | grep -q '^neo4j\$'; then
   # Check if neo4j container is running
-  if ! docker ps --format '{{.Names}}' | grep -q '^neo4j$'; then
+  if ! docker ps --format '{{.Names}}' | grep -q '^neo4j\$'; then
     echo "Neo4j container exists but is not running. Starting..."
     docker start neo4j
   else
@@ -121,40 +173,41 @@ if docker ps -a --format '{{.Names}}' | grep -q '^neo4j$'; then
   fi
 else
   echo "Neo4j container does not exist. Creating and starting..."
-  docker run -d \
-    --name neo4j \
-    --restart=always \
-    -p 7474:7474 \
-    -p 7687:7687 \
-    -v /data/neo4j/data:/data \
-    -v /data/neo4j/logs:/logs \
-    -v /data/neo4j/import:/import \
-    -v /data/neo4j/plugins:/plugins \
-    -e 'NEO4J_AUTH=neo4j/'"$NEO4J_PASSWORD"'' \
+  # Create and start container
+  docker run -d \\
+    --name neo4j \\
+    --restart=always \\
+    -p 7474:7474 \\
+    -p 7687:7687 \\
+    -v /data/neo4j/data:/data \\
+    -v /data/neo4j/logs:/logs \\
+    -v /data/neo4j/import:/import \\
+    -v /data/neo4j/plugins:/plugins \\
+    -e "NEO4J_AUTH=neo4j/\$NEO4J_PASSWORD" \\
     neo4j:latest
 fi
 
 # Verify neo4j is running properly
 MAX_ATTEMPTS=10
 ATTEMPT=0
-while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-  if docker ps --format '{{.Names}}' | grep -q '^neo4j$'; then
+while [ \$ATTEMPT -lt \$MAX_ATTEMPTS ]; do
+  if docker ps --format '{{.Names}}' | grep -q '^neo4j\$'; then
     echo "Neo4j container is running."
     exit 0
   fi
-  echo "Waiting for Neo4j container to start... ($ATTEMPT/$MAX_ATTEMPTS)"
-  ATTEMPT=$((ATTEMPT+1))
+  echo "Waiting for Neo4j container to start... (\$ATTEMPT/\$MAX_ATTEMPTS)"
+  ATTEMPT=\$((ATTEMPT+1))
   sleep 5
 done
 
-echo "Failed to start Neo4j container after $MAX_ATTEMPTS attempts."
+echo "Failed to start Neo4j container after \$MAX_ATTEMPTS attempts."
 exit 1
-SCRIPT
+EOF_SCRIPT
 
 chmod +x /usr/local/bin/start-neo4j.sh
 
-# Create systemd service for Neo4j
-cat > /etc/systemd/system/neo4j-docker.service << 'SERVICE'
+# Create systemd service without variable substitution
+cat > /etc/systemd/system/neo4j-docker.service << 'EOF_SERVICE'
 [Unit]
 Description=Neo4j Docker Container
 After=docker.service
@@ -164,31 +217,19 @@ Requires=docker.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/bin/start-neo4j.sh
-# In case it stops, restart in 10 seconds
 Restart=on-failure
 RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-SERVICE
+EOF_SERVICE
 
 # Enable and start the neo4j service
 systemctl daemon-reload
 systemctl enable neo4j-docker.service
 systemctl start neo4j-docker.service
 
-# Run Neo4j container for the first time
-docker run -d \
-  --name neo4j \
-  --restart=always \
-  -p 7474:7474 \
-  -p 7687:7687 \
-  -v $MOUNT_POINT/data:/data \
-  -v $MOUNT_POINT/logs:/logs \
-  -v $MOUNT_POINT/import:/import \
-  -v $MOUNT_POINT/plugins:/plugins \
-  -e 'NEO4J_AUTH=neo4j/'"$NEO4J_PASSWORD"'' \
-  neo4j:latest
+echo "Neo4j setup complete!"
 EOF
 
   tags = merge(
