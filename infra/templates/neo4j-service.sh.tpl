@@ -27,6 +27,9 @@ docker run -d \
   -v /data/neo4j/import:/import \
   -v /data/neo4j/plugins:/plugins \
   -e "NEO4J_AUTH=neo4j/$NEO4J_PASSWORD" \
+  -e "NEO4J_dbms_connector_bolt_advertised__address=0.0.0.0:7687" \
+  -e "NEO4J_dbms_connector_bolt_listen__address=0.0.0.0:7687" \
+  -e "NEO4J_dbms_default__listen__address=0.0.0.0" \
   neo4j:latest
 
 # Wait for Neo4j to start
