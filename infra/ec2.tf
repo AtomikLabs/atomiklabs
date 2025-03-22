@@ -182,6 +182,14 @@ resource "aws_security_group" "neo4j" {
     description     = "Neo4j Bolt access from ECS tasks"
   }
 
+  ingress {
+    from_port   = 7687
+    to_port     = 7687
+    protocol    = "tcp"
+    cidr_blocks = [data.aws_vpc.default.cidr_block]
+    description = "Neo4j Bolt access from within VPC"
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
