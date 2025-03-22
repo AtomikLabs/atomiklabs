@@ -174,6 +174,14 @@ resource "aws_security_group" "neo4j" {
     description = "Neo4j Bolt access (via SSH tunnel)"
   }
 
+  ingress {
+    from_port       = 7687
+    to_port         = 7687
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs_tasks.id]
+    description     = "Neo4j Bolt access from ECS tasks"
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
