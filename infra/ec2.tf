@@ -202,3 +202,23 @@ resource "aws_eip_association" "neo4j" {
     aws_instance.neo4j
   ]
 }
+
+resource "aws_ssm_parameter" "neo4j_uri" {
+  name        = "/${var.project}/${var.environment}/neo4j/uri"
+  description = "URI for connecting to Neo4j"
+  type        = "String"
+  value       = "bolt://${aws_eip.neo4j.public_ip}:7687"
+  overwrite   = true
+  
+  tags = local.common_tags
+}
+
+resource "aws_ssm_parameter" "neo4j_username" {
+  name        = "/${var.project}/${var.environment}/neo4j/username"
+  description = "Username for connecting to Neo4j"
+  type        = "String"
+  value       = "neo4j"
+  overwrite   = true
+  
+  tags = local.common_tags
+}

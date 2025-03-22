@@ -33,20 +33,4 @@ docker run -d \
 echo "Waiting for Neo4j to start..."
 sleep 20
 
-# Create SSM parameters for other services to connect
-PRIVATE_IP=$(hostname -i)
-aws ssm put-parameter \
-  --name "/${project}/${environment}/neo4j/uri" \
-  --value "bolt://$PRIVATE_IP:7687" \
-  --type "String" \
-  --overwrite \
-  --region ${region}
-
-aws ssm put-parameter \
-  --name "/${project}/${environment}/neo4j/username" \
-  --value "neo4j" \
-  --type "String" \
-  --overwrite \
-  --region ${region}
-
 echo "Neo4j setup complete!"
