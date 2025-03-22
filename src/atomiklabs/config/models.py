@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, AnyHttpUrl, validator
 from typing import List, Optional, Dict, Union
 from datetime import datetime, timedelta
+import re
 
 class Neo4jSettings(BaseModel):
     uri: str = Field(..., description="Neo4j connection URI")
@@ -17,9 +18,9 @@ class ArxivSettings(BaseModel):
         default=[], 
         description="Arxiv sets to fetch"
     )
-    date_from: Optional[datetime] = Field(
-        default=None, 
-        description="Start date for papers (default: 30 days ago)"
+    date_from: Union[str, datetime] = Field(
+        default="30d", 
+        description="Start date for papers (absolute date or relative like '30d')"
     )
     date_to: Optional[datetime] = Field(
         default=None, 
@@ -30,11 +31,31 @@ class ArxivSettings(BaseModel):
         description="Maximum results to retrieve per category"
     )
     
-    @validator("date_from", pre=True, always=True)
-    def set_date_from_default(cls, v):
-        if v is None:
-            return datetime.now() - timedelta(days=30)
-        return v
+    @validator("date_from", pre=True)
+    def parse_date_from(cls, v):
+        if isinstance(v, datetime):
+            return v
+            
+        # Check for relative date pattern like "30d"
+        if isinstance(v, str):
+            # Try relative date format
+            relative_match = re.match(r"^(\d+)([dw])$", v)
+            if relative_match:
+                amount, unit = relative_match.groups()
+                amount = int(amount)
+                
+                if unit == "d":
+                    return datetime.now() - timedelta(days=amount)
+                elif unit == "w":
+                    return datetime.now() - timedelta(weeks=amount)
+                    
+            # Try absolute date format
+            try:
+                return datetime.fromisoformat(v)
+            except ValueError:
+                pass
+                
+        raise ValueError("date_from must be a datetime, ISO date string, or relative date (e.g. '30d', '2w')")
     
     @validator("date_to", pre=True, always=True)
     def set_date_to_default(cls, v):
