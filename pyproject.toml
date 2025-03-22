@@ -1,20 +1,23 @@
-[tool.black]
-line-length = 120
-target-version = ['py310']
-
-[tool.isort]
-profile = 'black'
-line_length = 120
-skip = ['__init__.py', '.venv', 'build', 'dist', 'notes']
-known_first_party = ['myproject', 'anothermodule']
-multi_line_output = 3
-include_trailing_comma = true
-force_grid_wrap = 0
-use_parentheses = true
-ensure_newline_before_comments = true
-
-[tool.pytest.ini_options]
-pythonpath = [
-    '.',
-    'orchestration/airflow/dags',
+[project]
+name = "atomiklabs"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Brad Edwards",email = "j.bradley.edwards@gmail.com"}
 ]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "neo4j (>=5.28.1,<6.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+pytest-cov = "^6.0.0"
+

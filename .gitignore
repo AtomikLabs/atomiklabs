@@ -167,8 +167,6 @@ scratch/
 
 .DS_Store
 
-show_notes/
-
 **/records.json
 
 # Terraform
@@ -179,21 +177,7 @@ show_notes/
 node_modules/
 coverage/
 
-# Custom docs
-scripts/**/*.docx
-
 **/experiment.py
 
 .vscode/
 
-# Airflow
-/orchestration/airflow/logs/
-/orchestration/airflow/dags/__pycache__/
-
-notes/
-
-cline_docs/
-
-summaries/
-scripts/custom/summaries/
-scripts/neo4j_connect.sh
