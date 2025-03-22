@@ -1,0 +1,24 @@
+# Arxiv Fetcher Default Configuration
+
+app_name = "arxiv-fetcher"
+environment = "development"
+
+[neo4j]
+uri = "neo4j://localhost:7687"
+username = "neo4j"
+password = ""
+database = "neo4j"
+
+[arxiv]
+categories = ["cs.AI", "cs.LG"]
+sets = []
+date_from = "2d"
+# date_to = "2023-03-31"
+
+[storage]
+abstracts_dir = "data/abstracts"
+metadata_dir = "data/metadata"
+
+[logging]
+level = "INFO"
+file = "logs/app.log"
