@@ -79,13 +79,14 @@ resource "aws_iam_instance_profile" "neo4j_instance_profile" {
 }
 
 resource "aws_instance" "neo4j" {
-  ami                    = data.aws_ami.amazon_linux_2.id
-  instance_type          = "t3.medium"
-  availability_zone      = "${var.region}a"
-  subnet_id              = [for s in tolist(data.aws_subnets.default.ids) : s if data.aws_subnet.selected[s].availability_zone == "${var.region}a"][0]
-  vpc_security_group_ids = [aws_security_group.neo4j.id]
-  key_name               = aws_key_pair.neo4j_ssh.key_name
-  iam_instance_profile   = aws_iam_instance_profile.neo4j_instance_profile.name
+  ami                         = data.aws_ami.amazon_linux_2.id
+  instance_type               = "t3.medium"
+  availability_zone           = "${var.region}a"
+  subnet_id                   = [for s in tolist(data.aws_subnets.default.ids) : s if data.aws_subnet.selected[s].availability_zone == "${var.region}a"][0]
+  vpc_security_group_ids      = [aws_security_group.neo4j.id]
+  key_name                    = aws_key_pair.neo4j_ssh.key_name
+  iam_instance_profile        = aws_iam_instance_profile.neo4j_instance_profile.name
+  associate_public_ip_address = true
   
   count = 1
 
@@ -195,4 +196,8 @@ resource "aws_eip" "neo4j" {
 resource "aws_eip_association" "neo4j" {
   instance_id   = aws_instance.neo4j[0].id
   allocation_id = aws_eip.neo4j.id
+  
+  depends_on = [
+    aws_instance.neo4j
+  ]
 }

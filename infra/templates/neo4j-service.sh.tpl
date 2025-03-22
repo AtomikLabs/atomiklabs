@@ -39,12 +39,14 @@ aws ssm put-parameter \
   --name "/${project}/${environment}/neo4j/uri" \
   --value "bolt://$PRIVATE_IP:7687" \
   --type "String" \
-  --overwrite
+  --overwrite \
+  --region ${region}
 
 aws ssm put-parameter \
   --name "/${project}/${environment}/neo4j/username" \
   --value "neo4j" \
   --type "String" \
-  --overwrite
+  --overwrite \
+  --region ${region}
 
 echo "Neo4j setup complete!"
