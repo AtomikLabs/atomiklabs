@@ -60,7 +60,8 @@ resource "aws_iam_role_policy" "neo4j_ssm_access" {
       {
         Action = [
           "ssm:GetParameter",
-          "ssm:GetParameters"
+          "ssm:GetParameters",
+          "ssm:PutParameter"
         ]
         Effect = "Allow"
         Resource = [
